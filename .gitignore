@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Env
+.venv/
+venv/
+
+# Environment
+.env
+
+# VSCode
+.vscode/
+
+# Logs
+logs/
+*.log
+
+# Build
+dist/
+build/
+
+# Pytest
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
