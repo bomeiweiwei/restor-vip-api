@@ -12,8 +12,13 @@ class LoginResponse(BaseModel):
 
     customer_vip_account_id: str
     customer_id: str
+
     login_account: str
 
     full_name: str
+
     email: str | None = None
     mobile_phone: str | None = None
+
+    room_type_name: str | None = None
+    room_no: str | None = None
