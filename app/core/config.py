@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480
 
+    FRONTEND_ORIGIN: str
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
