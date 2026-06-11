@@ -16,6 +16,9 @@ class Settings(BaseSettings):
 
     FRONTEND_ORIGIN: str
 
+    AZURE_SPEECH_KEY: str
+    AZURE_SPEECH_REGION: str
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

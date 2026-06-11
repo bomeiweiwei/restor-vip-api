@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -25,12 +25,13 @@ router = APIRouter(
     "/speech-to-text",
     response_model=SpeechToTextResponse,
 )
-def speech_to_text(
+async def speech_to_text(
+    file: UploadFile = File(...),
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
 
-    return assistant_service.speech_to_text()
+    return await assistant_service.speech_to_text(file)
 
 
 @router.post(
