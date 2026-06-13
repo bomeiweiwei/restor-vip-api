@@ -23,7 +23,7 @@ router = APIRouter(
 
 @router.post(
     "/speech-to-text",
-    response_model=SpeechToTextResponse,
+    response_model=AssistantResponse,
 )
 async def speech_to_text(
     file: UploadFile = File(...),

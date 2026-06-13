@@ -6,6 +6,7 @@ from app.schemas.assistant import (
 )
 
 from app.services.speech_to_text_service import speech_to_text_service
+from app.services.judge_user_input_service import judge_user_input_service
 
 
 class AssistantService:
@@ -13,18 +14,26 @@ class AssistantService:
     async def speech_to_text(
         self,
         file: UploadFile,
-    ) -> SpeechToTextResponse:
+    ) -> AssistantResponse:
 
-        text = await speech_to_text_service.transcribe_upload_file(file)
+        result = await speech_to_text_service.transcribe_upload_file(file)
 
-        return SpeechToTextResponse(text=text)
+        text = result["text"]
+        language = result["language"]
+
+        response = judge_user_input_service.judge(text)
+
+        return AssistantResponse(
+            reply=response.reply,
+            language=language,
+        )
 
     def send_message(
         self,
         message: str,
     ) -> AssistantResponse:
 
-        return AssistantResponse(reply=f"已收到您的訊息：{message}")
+        return judge_user_input_service.judge(message)
 
 
 assistant_service = AssistantService()

@@ -3,6 +3,7 @@ import tempfile
 
 import azure.cognitiveservices.speech as speechsdk
 from fastapi import UploadFile
+from azure.cognitiveservices.speech import PropertyId
 
 from app.core.config import settings
 
@@ -54,7 +55,13 @@ class SpeechToTextService:
 
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
                 # print(result.text)
-                return result.text
+                detected_language = result.properties.get(
+                    PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult
+                )
+                return {
+                    "text": result.text,
+                    "language": detected_language or "zh-TW",
+                }
 
             if result.reason == speechsdk.ResultReason.NoMatch:
                 return "無法辨識語音內容"
