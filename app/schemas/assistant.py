@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from typing import Literal
 
 
 class SpeechToTextResponse(BaseModel):
@@ -11,3 +12,4 @@ class AssistantRequest(BaseModel):
 
 class AssistantResponse(BaseModel):
     reply: str
+    language: Literal["zh-TW", "en-US", "ja-JP", "ko-KR"] | None = "zh-TW"

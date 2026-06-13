@@ -1,17 +1,31 @@
+from fastapi import UploadFile
+
 from app.schemas.assistant import (
     SpeechToTextResponse,
     AssistantResponse,
 )
 
+from app.services.speech_to_text_service import speech_to_text_service
+from app.services.judge_user_input_service import judge_user_input_service
+
 
 class AssistantService:
 
-    def speech_to_text(
+    async def speech_to_text(
         self,
-    ) -> SpeechToTextResponse:
+        file: UploadFile,
+    ) -> AssistantResponse:
 
-        return SpeechToTextResponse(
-            text="請推薦今晚餐廳"
+        result = await speech_to_text_service.transcribe_upload_file(file)
+
+        text = result["text"]
+        language = result["language"]
+
+        response = judge_user_input_service.judge(text)
+
+        return AssistantResponse(
+            reply=response.reply,
+            language=language,
         )
 
     def send_message(
@@ -19,9 +33,7 @@ class AssistantService:
         message: str,
     ) -> AssistantResponse:
 
-        return AssistantResponse(
-            reply=f"已收到您的訊息：{message}"
-        )
+        return judge_user_input_service.judge(message)
 
 
 assistant_service = AssistantService()
