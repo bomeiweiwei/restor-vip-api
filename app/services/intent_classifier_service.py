@@ -47,7 +47,7 @@ class IntentClassifierService:
 
     def _normalize_result(self, result: IntentResult) -> IntentResult:
         if result.intent == "service_request":
-            result.qa_category = None
+            result.qa_tasks = []
 
         if result.confidence < 0:
             result.confidence = 0
