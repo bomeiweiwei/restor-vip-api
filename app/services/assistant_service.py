@@ -1,12 +1,9 @@
 from fastapi import UploadFile
 
-from app.schemas.assistant import (
-    SpeechToTextResponse,
-    AssistantResponse,
-)
-
+from app.schemas.assistant import AssistantResponse
 from app.services.speech_to_text_service import speech_to_text_service
 from app.services.judge_user_input_service import judge_user_input_service
+from app.services.nlp_service import nlp_service
 
 
 class AssistantService:
@@ -18,14 +15,27 @@ class AssistantService:
 
         result = await speech_to_text_service.transcribe_upload_file(file)
 
-        text = result["text"]
-        language = result["language"]
+        original_text = result["text"]
+        speech_language = result["language"]
 
-        response = judge_user_input_service.judge(text)
+        nlp_result = nlp_service.analyze_user_text(original_text)
+
+        user_language = nlp_service.normalize_language(
+            speech_language or nlp_result["language"]
+        )
+
+        response = judge_user_input_service.judge(
+            nlp_result["zh_text"]
+        )
+
+        reply = nlp_service.translate_reply(
+            response.reply,
+            user_language,
+        )
 
         return AssistantResponse(
-            reply=response.reply,
-            language=language,
+            reply=reply,
+            language=user_language,
         )
 
     def send_message(
@@ -33,7 +43,21 @@ class AssistantService:
         message: str,
     ) -> AssistantResponse:
 
-        return judge_user_input_service.judge(message)
+        nlp_result = nlp_service.analyze_user_text(message)
+
+        response = judge_user_input_service.judge(
+            nlp_result["zh_text"]
+        )
+
+        reply = nlp_service.translate_reply(
+            response.reply,
+            nlp_result["language"],
+        )
+
+        return AssistantResponse(
+            reply=reply,
+            language=nlp_result["language"],
+        )
 
 
 assistant_service = AssistantService()

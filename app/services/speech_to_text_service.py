@@ -54,7 +54,7 @@ class SpeechToTextService:
             result = recognizer.recognize_once()
 
             if result.reason == speechsdk.ResultReason.RecognizedSpeech:
-                # print(result.text)
+                print(result.text)
                 detected_language = result.properties.get(
                     PropertyId.SpeechServiceConnection_AutoDetectSourceLanguageResult
                 )

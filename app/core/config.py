@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     QDRANT_COLLECTION_NAME: str
     QDRANT_TIMEOUT_SECONDS: str
 
+    AZURE_TRANSLATOR_KEY: str
+    AZURE_TRANSLATOR_ENDPOINT: str
+    AZURE_TRANSLATOR_REGION: str
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

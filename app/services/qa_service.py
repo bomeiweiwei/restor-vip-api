@@ -83,6 +83,8 @@ class QAService:
                     f"{result}"
                 )
             )
+        
+        # print("\ntask_results：\n\n".join(task_results))
 
         final_answer = self.answer_chain.invoke(
             {
