@@ -44,3 +44,7 @@ class IntentResult(BaseModel):
 
     confidence: float
     reason: str
+
+class TextToSpeechRequest(BaseModel):
+    text: str = Field(..., min_length=1)
+    language: str = "zh-TW"
