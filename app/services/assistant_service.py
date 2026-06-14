@@ -5,11 +5,15 @@ from app.services.speech_to_text_service import speech_to_text_service
 from app.services.judge_user_input_service import judge_user_input_service
 from app.services.nlp_service import nlp_service
 
+from sqlalchemy.orm import Session
+
 
 class AssistantService:
 
     async def speech_to_text(
         self,
+        db: Session,
+        current_user: dict,
         file: UploadFile,
     ) -> AssistantResponse:
 
@@ -18,7 +22,9 @@ class AssistantService:
         text = result["text"]
         language = result["language"]
 
-        response = judge_user_input_service.judge(text)
+        response = judge_user_input_service.judge(
+            db=db, current_user=current_user, message=text
+        )
 
         translated_reply = nlp_service.translate_reply(
             text=response.reply,
@@ -33,12 +39,16 @@ class AssistantService:
 
     def send_message(
         self,
+        db: Session,
+        current_user: dict,
         message: str,
     ) -> AssistantResponse:
 
         nlp_result = nlp_service.analyze_user_text(message)
 
-        response = judge_user_input_service.judge(nlp_result["zh_text"])
+        response = judge_user_input_service.judge(
+            db=db, current_user=current_user, message=nlp_result["zh_text"]
+        )
 
         reply = nlp_service.translate_reply(
             response.reply,

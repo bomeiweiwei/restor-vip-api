@@ -33,7 +33,9 @@ async def speech_to_text(
     db: Session = Depends(get_db),
 ):
 
-    return await assistant_service.speech_to_text(file)
+    return await assistant_service.speech_to_text(
+        db=db, current_user=current_user, file=file
+    )
 
 
 @router.post(
@@ -46,7 +48,10 @@ def send_msg(
     db: Session = Depends(get_db),
 ):
 
-    return assistant_service.send_message(request.message)
+    return assistant_service.send_message(
+        db=db, current_user=current_user, message=request.message
+    )
+
 
 @router.post("/text-to-speech")
 async def text_to_speech_api(
