@@ -43,6 +43,11 @@ class Settings(BaseSettings):
 
     OPEN_WEATHER_MAP_API_KEY: str
 
+    QDRANT_URL: str
+    QDRANT_API_KEY: str
+    QDRANT_COLLECTION_NAME: str
+    QDRANT_TIMEOUT_SECONDS: str
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

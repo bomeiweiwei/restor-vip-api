@@ -3,6 +3,12 @@ from app.agents.resort_qa_agent_service import resort_qa_agent_service
 from app.agents.weather_agent_service import weather_agent_service
 from app.agents.traffic_agent_service import traffic_agent_service
 
+from langchain_core.prompts import ChatPromptTemplate
+
+from app.ai.factory import create_ai_langchain
+from app.core.config import settings
+from app.prompts.qa_answer_prompt import QA_ANSWER_SYSTEM_PROMPT
+
 
 RAG_CATEGORIES = {
     "facility_hours",
@@ -18,6 +24,28 @@ RAG_CATEGORIES = {
 
 
 class QAService:
+    def __init__(self):
+        self.llm = create_ai_langchain(settings.AI_PROVIDER).llm
+
+        self.answer_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", QA_ANSWER_SYSTEM_PROMPT),
+                (
+                    "human",
+                    """
+    旅客原始問題：
+    {message}
+
+    查詢結果：
+    {tool_results}
+
+    請產生給旅客看的最終回答。
+    """,
+                ),
+            ]
+        )
+
+        self.answer_chain = self.answer_prompt | self.llm
 
     def process(
         self,
@@ -56,15 +84,20 @@ class QAService:
                 )
             )
 
-        return AssistantResponse(
-            reply=(
-                "[QA 問答流程]\n"
-                f"原始問題：{message}\n"
-                f"信心分數：{intent_result.confidence}\n"
-                f"原因：{intent_result.reason}\n\n"
-                + "\n\n".join(task_results)
-            )
+        final_answer = self.answer_chain.invoke(
+            {
+                "message": message,
+                "tool_results": "\n\n".join(task_results),
+            }
         )
+
+        reply = (
+            final_answer.content
+            if hasattr(final_answer, "content")
+            else str(final_answer)
+        )
+
+        return AssistantResponse(reply=reply)
 
 
 qa_service = QAService()
