@@ -1,4 +1,14 @@
-from app.schemas.assistant import AssistantResponse
+from app.services.intent_classifier_service import (
+    intent_classifier_service,
+)
+
+from app.services.qa_service import (
+    qa_service,
+)
+
+from app.services.customer_service_request_service import (
+    customer_service_request_service,
+)
 
 
 class JudgeUserInputService:
@@ -6,9 +16,23 @@ class JudgeUserInputService:
     def judge(
         self,
         message: str,
-    ) -> AssistantResponse:
+    ):
 
-        return AssistantResponse(reply=f"{message}")
+        result = intent_classifier_service.classify(
+            message
+        )
+
+        if result.intent == "qa":
+            return qa_service.process(
+                message=message,
+                intent_result=result,
+            )
+
+        return customer_service_request_service.process(
+            message
+        )
 
 
-judge_user_input_service = JudgeUserInputService()
+judge_user_input_service = (
+    JudgeUserInputService()
+)
