@@ -26,6 +26,7 @@ class AssistantService:
         )
 
         return AssistantResponse(
+            text=text,
             reply=translated_reply,
             language=language,
         )

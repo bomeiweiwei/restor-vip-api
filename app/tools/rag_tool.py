@@ -72,6 +72,8 @@ class RagTool:
 
         service = get_rag_search_service()
 
+        print(f'=====RAG:{qa_category} query=====')
+
         return service.search_knowledge_by_categories(
             user_question=query,
             categories=categories,

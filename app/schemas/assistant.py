@@ -11,6 +11,7 @@ class AssistantRequest(BaseModel):
 
 
 class AssistantResponse(BaseModel):
+    text: str | None = None
     reply: str
     language: Literal["zh-TW", "en-US", "ja-JP", "ko-KR"] | None = "zh-TW"
 
