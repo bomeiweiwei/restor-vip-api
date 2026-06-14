@@ -15,27 +15,19 @@ class AssistantService:
 
         result = await speech_to_text_service.transcribe_upload_file(file)
 
-        original_text = result["text"]
-        speech_language = result["language"]
+        text = result["text"]
+        language = result["language"]
 
-        nlp_result = nlp_service.analyze_user_text(original_text)
+        response = judge_user_input_service.judge(text)
 
-        user_language = nlp_service.normalize_language(
-            speech_language or nlp_result["language"]
-        )
-
-        response = judge_user_input_service.judge(
-            nlp_result["zh_text"]
-        )
-
-        reply = nlp_service.translate_reply(
-            response.reply,
-            user_language,
+        translated_reply = nlp_service.translate_reply(
+            text=response.reply,
+            target_language=language,
         )
 
         return AssistantResponse(
-            reply=reply,
-            language=user_language,
+            reply=translated_reply,
+            language=language,
         )
 
     def send_message(
@@ -45,9 +37,7 @@ class AssistantService:
 
         nlp_result = nlp_service.analyze_user_text(message)
 
-        response = judge_user_input_service.judge(
-            nlp_result["zh_text"]
-        )
+        response = judge_user_input_service.judge(nlp_result["zh_text"])
 
         reply = nlp_service.translate_reply(
             response.reply,
