@@ -1,7 +1,20 @@
 from app.schemas.assistant import AssistantResponse, IntentResult
-from app.services.rag_search_service import rag_search_service
-from app.services.weather_service import weather_service
-from app.services.traffic_service import traffic_service
+from app.agents.resort_qa_agent_service import resort_qa_agent_service
+from app.agents.weather_agent_service import weather_agent_service
+from app.agents.traffic_agent_service import traffic_agent_service
+
+
+RAG_CATEGORIES = {
+    "facility_hours",
+    "attraction_hours",
+    "facility_info",
+    "rules",
+    "price",
+    "restaurant",
+    "attraction",
+    "room_facility",
+    "room_service",
+}
 
 
 class QAService:
@@ -12,29 +25,34 @@ class QAService:
         intent_result: IntentResult,
     ) -> AssistantResponse:
 
-        tool_results: list[str] = []
+        task_results: list[str] = []
 
         for task in intent_result.qa_tasks:
             category = task.qa_category
             query = task.query
 
             if category == "weather":
-                tool_result = weather_service.search(query)
+                result = weather_agent_service.answer(query)
 
             elif category == "traffic":
-                tool_result = traffic_service.search(query)
+                result = traffic_agent_service.answer(query)
 
-            else:
-                tool_result = rag_search_service.search(
-                    message=query,
+            elif category in RAG_CATEGORIES:
+                result = resort_qa_agent_service.answer(
+                    query=query,
                     qa_category=category,
                 )
 
-            tool_results.append(
+            else:
+                result = (
+                    f"無法處理的 QA 類別：{category}"
+                )
+
+            task_results.append(
                 (
                     f"分類：{category}\n"
                     f"查詢：{query}\n"
-                    f"工具結果：{tool_result}"
+                    f"{result}"
                 )
             )
 
@@ -44,7 +62,7 @@ class QAService:
                 f"原始問題：{message}\n"
                 f"信心分數：{intent_result.confidence}\n"
                 f"原因：{intent_result.reason}\n\n"
-                + "\n\n".join(tool_results)
+                + "\n\n".join(task_results)
             )
         )
 

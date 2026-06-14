@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     LMSTUDIO_API_KEY: str
     LMSTUDIO_MODEL_NAME: str
 
+    OPEN_WEATHER_MAP_API_KEY: str
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
