@@ -35,6 +35,8 @@ class WeatherTool:
             weather_description = data["weather"][0]["description"]
             temperature = data["main"]["temp"]
 
+            print('=====weather api query=====')
+
             return (
                 f"{city} 目前天氣："
                 f"{weather_description}，"

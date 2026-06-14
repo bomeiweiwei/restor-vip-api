@@ -4,7 +4,9 @@ class TrafficTool:
         self,
         query: str,
     ) -> str:
-
+        
+        print('=====traffic api query=====')
+        
         return (
             "[Traffic Tool]\n"
             f"查詢：{query}\n"
