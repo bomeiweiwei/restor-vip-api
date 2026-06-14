@@ -14,10 +14,7 @@ class AssistantResponse(BaseModel):
     reply: str
     language: Literal["zh-TW", "en-US", "ja-JP", "ko-KR"] | None = "zh-TW"
 
-class IntentResult(BaseModel):
-    intent: Literal["qa", "service_request"] = Field(
-        description="使用者意圖，只能是 qa 或 service_request"
-    )
+class QATask(BaseModel):
     qa_category: Literal[
         "facility_hours",
         "attraction_hours",
@@ -30,13 +27,20 @@ class IntentResult(BaseModel):
         "attraction",
         "room_facility",
         "room_service",
-    ] | None = Field(
-        default=None,
-        description="QA 問題類別；如果 intent 是 service_request，必須是 null",
+    ]
+
+    query: str = Field(
+        description="針對此分類整理後的查詢文字"
     )
-    confidence: float = Field(
-        description="分類信心分數，0 到 1"
+
+
+class IntentResult(BaseModel):
+    intent: Literal["qa", "service_request"]
+
+    qa_tasks: list[QATask] = Field(
+        default_factory=list,
+        description="QA 任務清單；service_request 時必須是空陣列"
     )
-    reason: str = Field(
-        description="一句繁體中文判斷原因"
-    )
+
+    confidence: float
+    reason: str
