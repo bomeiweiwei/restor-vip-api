@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic_settings import BaseSettings
 
 
@@ -19,27 +20,27 @@ class Settings(BaseSettings):
     AZURE_SPEECH_KEY: str
     AZURE_SPEECH_REGION: str
 
-    EMBEDDING_PROVIDER: str
+    EMBEDDING_PROVIDER: str = "azure"
 
     AZURE_OPENAI_EMBEDDING_MODEL: str
-    GEMINI_EMBEDDING_MODEL: str
+    GEMINI_EMBEDDING_MODEL: Optional[str] = None
 
-    AI_PROVIDER: str
+    AI_PROVIDER: str = "azure"
 
     AZURE_OPENAI_BASE_URL: str
     AZURE_OPENAI_API_KEY: str
     AZURE_OPENAI_DEPLOYMENT_NAME: str
 
-    GEMINI_API_KEY: str
-    GEMINI_MODEL_NAME: str
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL_NAME: Optional[str] = None
 
-    GOOGLE_APPLICATION_CREDENTIALS: str
-    GOOGLE_CLOUD_PROJECT: str
-    GOOGLE_CLOUD_LOCATION: str
+    GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = None
+    GOOGLE_CLOUD_PROJECT: Optional[str] = None
+    GOOGLE_CLOUD_LOCATION: Optional[str] = None
 
-    LMSTUDIO_BASE_URL: str
-    LMSTUDIO_API_KEY: str
-    LMSTUDIO_MODEL_NAME: str
+    LMSTUDIO_BASE_URL: Optional[str] = None
+    LMSTUDIO_API_KEY: Optional[str] = None
+    LMSTUDIO_MODEL_NAME: Optional[str] = None
 
     OPEN_WEATHER_MAP_API_KEY: str
 
