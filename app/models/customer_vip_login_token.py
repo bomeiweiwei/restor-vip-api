@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, String
+from sqlalchemy import Column, Unicode, DateTime, String
 from sqlalchemy.dialects.mssql import UNIQUEIDENTIFIER
 
 from app.core.database import Base
@@ -15,7 +15,7 @@ class CustomerVipLoginToken(Base):
     )
 
     TokenHash = Column(
-        String(255),
+        Unicode(255),
         nullable=False,
     )
 
