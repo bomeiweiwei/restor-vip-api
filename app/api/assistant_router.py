@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, UploadFile, File, Response, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -6,12 +6,14 @@ from app.core.database import get_db
 from app.schemas.assistant import (
     AssistantRequest,
     AssistantResponse,
-    SpeechToTextResponse,
+    TextToSpeechRequest,
 )
 
 from app.services.assistant_service import (
     assistant_service,
 )
+
+from app.services.text_to_speech_service import text_to_speech
 
 from app.dependencies.auth_dependency import get_current_user
 
@@ -23,14 +25,17 @@ router = APIRouter(
 
 @router.post(
     "/speech-to-text",
-    response_model=SpeechToTextResponse,
+    response_model=AssistantResponse,
 )
-def speech_to_text(
+async def speech_to_text(
+    file: UploadFile = File(...),
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
 
-    return assistant_service.speech_to_text()
+    return await assistant_service.speech_to_text(
+        db=db, current_user=current_user, file=file
+    )
 
 
 @router.post(
@@ -43,4 +48,36 @@ def send_msg(
     db: Session = Depends(get_db),
 ):
 
-    return assistant_service.send_message(request.message)
+    return assistant_service.send_message(
+        db=db, current_user=current_user, message=request.message
+    )
+
+
+@router.post("/text-to-speech")
+async def text_to_speech_api(
+    request: TextToSpeechRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        audio_bytes = text_to_speech(
+            text=request.text,
+            language=request.language,
+        )
+
+        if not audio_bytes:
+            raise HTTPException(
+                status_code=500,
+                detail="語音合成失敗",
+            )
+
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",
+        )
+
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
