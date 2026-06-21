@@ -93,12 +93,13 @@ class ItineraryService:
     def submit_feedback(
         self,
         message: str,
+        date: str,
     ):
-        print(f"收到行程修改意見：{message}")
+        print(f"收到針對行程日期 {date} 的修改意見：{message}")
 
         return {
             "success": True,
-            "message": "已收到您的修改意見",
+            "message": f"已收到您對 {date} 行程的修改意見", # 也可以在回傳訊息中運用
         }
 
 

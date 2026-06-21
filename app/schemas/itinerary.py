@@ -16,6 +16,7 @@ class ItineraryDateGroupResponse(BaseModel):
 
 class ItineraryFeedbackRequest(BaseModel):
     message: str
+    date: str
 
 
 class ItineraryFeedbackResponse(BaseModel):

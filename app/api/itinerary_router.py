@@ -40,5 +40,6 @@ def submit_feedback(
     db: Session = Depends(get_db),
 ):
     return itinerary_service.submit_feedback(
-        request.message
+        request.message,
+        date=request.date
     )
