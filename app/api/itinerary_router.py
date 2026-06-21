@@ -40,6 +40,8 @@ def submit_feedback(
     db: Session = Depends(get_db),
 ):
     return itinerary_service.submit_feedback(
-        request.message,
-        date=request.date
+        db=db,                        # 1. 將 db 傳給 service
+        current_user=current_user,    # 2. 將 current_user 傳給 service
+        message=request.message,      # 指定參數名：message=...
+        date=request.date             # 指定參數名：date=...
     )
