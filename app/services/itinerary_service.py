@@ -231,7 +231,6 @@ class ItineraryService:
             print(f"⚠️ 查詢景點 {source_file} 時發生錯誤: {e}")
             return None
 
-
     def get_candidate_spots_from_vdb(self, db: Session, query: str, top_k: int = 10) -> list[dict]:
         """
         根據使用者的修改意見，從向量資料庫中尋找合適的候選景點
@@ -281,6 +280,7 @@ class ItineraryService:
         current_user: dict,
         message: str,
         date: str,
+        lang: str = "zh",
     ):
         customer_id = current_user.get("customer_id")
 
@@ -298,51 +298,77 @@ class ItineraryService:
         if target_itinerary and target_itinerary.schedules:
             lines = []
             for schedule in target_itinerary.schedules:
-                lines.append(f"  - {schedule.time}：【{schedule.title}】 (分類: {schedule.preference})")
-                lines.append(f"    說明：{schedule.content}")
+                lines.append(f"  - {schedule.time}：【{schedule.title}】 (分類/Preference: {schedule.preference})")
+                lines.append(f"    說明/Description：{schedule.content}")
             original_schedule_text = "\n".join(lines)
         else:
-            original_schedule_text = "  (當日目前無安排任何行程)"
+            original_schedule_text = "  (當日目前無安排任何行程 / No schedule planned for this day)"
 
         # 2. 取得向量資料庫資料 (把修改意見當 Query 去找景點)
         candidate_spots = self.get_candidate_spots_from_vdb(db=db, query=message, top_k=5)
 
-        # 3. 核心：動態組裝 LLM Prompt
+        # 3. 🧠 依據語系定義 System Instruction / Prompt 框架
+        if lang == "en":
+            role_instruction = "You are a professional and attentive VIP concierge itinerary planner."
+            task_instruction = f"Please replan the itinerary for {date} based on the customer's request."
+            output_requirement = (
+                "1. **Guardrail & Topic Constraint**: Review the customer's request first. If the request is entirely unrelated to travel, hotels, itineraries, attractions, transportation, or dining (e.g., asking about programming, politics, financial investments, or casual chitchat), you MUST reject the request.\n"
+                "   - In case of rejection: Set 'reply_message' to a polite refusal explaining you can only help with itinerary planning, and keep the 'schedules' array identical to the original schedule provided below.\n"
+                "2. If the request is valid, adjust the original schedule based on user feedback. Keep original plans where possible.\n"
+                "3. **CRITICAL PREFERENCE RULE**: For the 'preference' field of each schedule item, regardless of language, you MUST ONLY output one of these exact Chinese category names: '觀光園區', '在地文化', '餐飲美食', '溫泉公園', or '其他'. DO NOT translate this field to English so that the frontend filters remain fully functional!\n"
+                "4. **MUST output in JSON format** with two fields:\n"
+                '   - "reply_message": Warm and friendly response to the customer in English (100-150 words, explaining exactly what you changed or why you refused).\n'
+                '   - "schedules": Array of updated daily items. Key texts ("title", "content") MUST be in English. Time format MUST be HH:mm.'
+            )
+            candidate_title = "### Candidate Spots Recommended by System (Preferentially insert these if they match user preferences)"
+            feedback_title = "### Customer's Feedback"
+            
+        else:
+            # 中文 Prompt 設定
+            role_instruction = "你是一位專業且貼心的 VIP 專屬行程規劃師。"
+            task_instruction = f"請根據以下顧客資訊與要求，重新規劃 {date} 的行程。"
+            output_requirement = (
+                "1. **核心防護與主題限制 (最高優先級)**：請先審查顧客的修改意見。如果意見內容「完全與旅遊、飯店、行程調整、景點、交通、美食餐飲無關」（例如：詢問寫程式、政治、股票、聊天、或要求你扮演其他角色），你**必須拒減該請求**。\n"
+                "   - 拒絕時的做法：'reply_message' 請填入禮貌拒絕的文字（說明您身為專屬管家，僅能提供行程相關的協助）；'schedules' 欄位則**直接複製並重現原本的行程規劃**，不做任何更動。\n"
+                "2. 如果意見與行程相關，請根據顧客意見調整原始行程規劃，盡可能保留原本的行程及時間，並在合適的時段安插新景點。\n"
+                "3. **分類欄位限制**：每個行程項目的 'preference' 欄位，請一律使用這幾個標準中文分類：'觀光園區', '在地文化', '餐飲美食', '溫泉公園', '其他'。\n"
+                "4. **必須以 JSON 格式輸出**，JSON 的最外層必須包含兩個欄位：\n"
+                '   - "reply_message": 給顧客的親切回覆（100~150字，以繁體中文介紹修改了哪些地方）。\n'
+                '   - "schedules": 更新後的當日所有行程陣列，每個物件包含 "time" (格式 HH:mm), "title" (景點名稱), "content" (繁體中文景點說明), "preference" (分類)。'
+            )
+            candidate_title = "### 系統推薦的候選景點 (請優先從以下清單挑選適合該時段的行程來加入行程)"
+            feedback_title = "### 顧客的修改意見"
+
+        # 動態組裝 Prompt
         prompt_lines = [
-            f"你是一位專業且貼心的 VIP 專屬行程規劃師。請根據以下顧客資訊與要求，重新規劃 {date} 的行程。",
+            f"{role_instruction} {task_instruction}",
             "",
-            "### 顧客基本資料",
-            f"- 姓名：{customer_data.get('full_name')}",
-            f"- 年齡：{customer_data.get('age')} 歲",
-            f"- 同行人數：{customer_data.get('total_count')} 人",
-            f"- 入住房型：{customer_data.get('room_type_name')}",
+            "### Customer Profile",
+            f"- Name: {customer_data.get('full_name')}",
+            f"- Age: {customer_data.get('age')}",
+            f"- Total Guests: {customer_data.get('total_count')}",
             "",
-            f"### {date} 原本的行程規劃",
+            f"### Original Itinerary for {date}",
             original_schedule_text,
             "",
-            "### 顧客的修改意見",
+            f"{feedback_title}",
             f"「{message}」",
             "",
-            "### 系統推薦的候選景點 (請優先從以下清單挑選適合該時段的行程來加入行程)",
+            f"{candidate_title}",
         ]
 
         # 將 RAG 撈出來的景點塞進 Prompt 裡
         if candidate_spots:
             for i, spot in enumerate(candidate_spots, 1):
-                prompt_lines.append(
-                    f"{i}. 【{spot['title']}】(分類: {spot['preference']}) - {spot['content']}..."
-                )
+                prompt_lines.append(f"{i}. 【{spot['title']}】({spot['preference']}) - {spot['content']}...")
         else:
-            prompt_lines.append("- 目前無特定候選景點，請根據您的專業知識推薦。")
+            prompt_lines.append("- No specific candidate spots found.")
 
         # 加入輸出限制
         prompt_lines.extend([
             "",
-            "### 任務要求",
-            "1. 請根據顧客意見調整原始行程規劃，盡可能保留原本的行程及時間，並在合適的時段安插新景點。",
-            "2. **必須以 JSON 格式輸出**，JSON 的最外層必須包含兩個欄位：",
-            "   - \"reply_message\": 給顧客的親切回覆（100~150字，介紹修改了哪些地方）。",
-            "   - \"schedules\": 更新後的當日所有行程陣列，每個物件包含 \"time\" (格式 HH:mm), \"title\" (景點名稱), \"content\" (景點說明), \"preference\" (分類)。"
+            "### Requirements",
+            output_requirement
         ])
 
         final_prompt = "\n".join(prompt_lines)
@@ -356,7 +382,6 @@ class ItineraryService:
 
         if HAS_GENAI_SDK:
             try:
-                # 💡 已啟用：GCP 企業版 (使用 Service Account JSON)
                 client = genai.Client(vertexai=True, location='global') 
                 
                 print("🚀 正在呼叫 Vertex AI (Gemini) 模型...")
@@ -365,8 +390,8 @@ class ItineraryService:
                     model='gemini-3.5-flash',
                     contents=final_prompt,
                     config=types.GenerateContentConfig(
-                        temperature=0.7, 
-                        response_mime_type="application/json", # 🚀 關鍵：強制模型回傳標準 JSON
+                        temperature=0.2, 
+                        response_mime_type="application/json", # 強制模型回傳標準 JSON
                     )
                 )
                 
@@ -375,13 +400,39 @@ class ItineraryService:
                 llm_response_text = result_data.get("reply_message", "行程已根據您的需求更新！")
                 new_schedules = result_data.get("schedules", [])
 
-                print("✅ LLM 新行程生成成功！準備寫入資料庫...")
+                print("✅ LLM 行程解析成功！開始安全與意圖檢查...")
                 print(llm_response_text)
-
+              
                 # =====================================================================
-                # 6. 核心：將新行程覆寫回 SQL Server 資料庫
+                # 🛡️ 深度安全與無變更檢查機制 (完美修復：刪除行程與部分修改衝突問題)
                 # =====================================================================
+                is_unchanged = False
                 
+                # 只有在新舊行程長度相同時，才需要做深層內容比對
+                if target_itinerary and len(new_schedules) == len(target_itinerary.schedules):
+                    all_identical = True
+                    for new_sch, orig_sch in zip(new_schedules, target_itinerary.schedules):
+                        # 正規化字串比對，防範多餘空白干擾
+                        new_title = str(new_sch.get("title", "")).strip()
+                        orig_title = str(orig_sch.title or "").strip()
+                        
+                        new_time = str(new_sch.get("time", "")).strip()
+                        orig_time = str(orig_sch.time or "").strip()
+                        
+                        new_content = str(new_sch.get("content", "")).strip()
+                        orig_content = str(orig_sch.content or "").strip()
+                        
+                        if new_title != orig_title or new_time != orig_time or new_content != orig_content:
+                            all_identical = False
+                            break # 只要有任何一筆、一個欄位發生改變，就代表有合理修改！
+                    
+                    if all_identical:
+                        is_unchanged = True
+                
+                # 情境 B：原本就沒有行程，且新產生的也是空陣列 (完全沒行程，不需多做更新)
+                elif (not target_itinerary or not target_itinerary.schedules) and len(new_schedules) == 0:
+                    is_unchanged = True
+
                 # 6.1 撈出該名顧客對應的 RecommendationId (主表 ID)
                 rec_sql = text("""
                     SELECT TOP 1 RecommendationId 
@@ -391,49 +442,70 @@ class ItineraryService:
                 """)
                 rec_record = db.execute(rec_sql, {"customer_id": customer_id}).mappings().first()
 
-                if rec_record and new_schedules:
+                # =====================================================================
+                # 💾 資料庫寫入邏輯
+                # =====================================================================
+                if rec_record and not is_unchanged:
                     rec_id = rec_record["RecommendationId"]
 
-                    # 6.2 刪除該日期原本的舊行程
+                    # 1. 無論如何，先刪除該日期原本的舊行程 (達到清空/刪除的效果)
                     delete_sql = text("""
                         DELETE FROM VipItinerarySchedule
                         WHERE RecommendationId = :rec_id AND ScheduleDate = :date
                     """)
                     db.execute(delete_sql, {"rec_id": rec_id, "date": date})
 
-                    # 6.3 將 LLM 生成的新行程一筆一筆 Insert 進去
-                    insert_sql = text("""
-                        INSERT INTO VipItinerarySchedule 
-                            (ScheduleId, RecommendationId, ScheduleDate, ScheduleTime, Title, Content, Preference)
-                        VALUES 
-                            (:schedule_id, :rec_id, :date, :time, :title, :content, :preference)
-                    """)
+                    # 2. 如果新行程有內容 (不是要全部刪光)，才一筆一筆 Insert 進去
+                    if len(new_schedules) > 0:
+                        insert_sql = text("""
+                            INSERT INTO VipItinerarySchedule 
+                                (ScheduleId, RecommendationId, ScheduleDate, ScheduleTime, Title, Content, Preference)
+                            VALUES 
+                                (:schedule_id, :rec_id, :date, :time, :title, :content, :preference)
+                        """)
 
-                    for schedule in new_schedules:
-                        db.execute(insert_sql, {
-                            "schedule_id": str(uuid.uuid4()).upper(), # 產生新的 GUID
-                            "rec_id": rec_id,
-                            "date": date,
-                            "time": schedule.get("time", "00:00"),
-                            "title": schedule.get("title", "未命名行程"),
-                            "content": schedule.get("content", ""),
-                            "preference": schedule.get("preference", "系統推薦")
-                        })
+                        for schedule in new_schedules:
+                            db.execute(insert_sql, {
+                                "schedule_id": str(uuid.uuid4()).upper(), # GUID
+                                "rec_id": rec_id,
+                                "date": date,
+                                "time": schedule.get("time", "00:00"),
+                                "title": schedule.get("title", "未命名行程"),
+                                "content": schedule.get("content", ""),
+                                "preference": schedule.get("preference", "系統推薦")
+                            })
 
-                    # 6.4 確認無誤後，正式提交變更到資料庫！
+                        print(f"💾 成功將 {date} 的 {len(new_schedules)} 筆新行程寫入資料庫！")
+                    else:
+                        print(f"🗑️ 使用者要求清空行程，已成功刪除 {date} 的所有行程！")
+
+                    # 正式變更提交
                     db.commit()
-                    print(f"💾 成功將 {date} 的 {len(new_schedules)} 筆新行程寫入資料庫！")
 
+                else:
+                    # 如果判定為完全無關問題或無任何字句變動，直接 commit 釋放鎖定
+                    db.commit() 
+                    print("🛡️ 觸發安全攔截或行程完全無變更，跳過資料庫覆寫。")
+                    
             except Exception as e:
-                db.rollback() # 如果中途發生任何錯誤（例如 JSON 解析失敗、SQL 錯誤），將資料庫復原
+                db.rollback() # 出錯時事務復原
                 print(f"⚠️ 呼叫模型或更新資料庫時發生錯誤: {e}")
-                llm_response_text = f"親愛的 {customer_data.get('full_name')} 您好，我們已收到您「{message}」的需求，專屬管家將盡快為您人工調整專屬行程！"
+                if lang == "en":
+                    llm_response_text = f"Dear {customer_data.get('full_name')}, we have received your request '{message}'. Our butler team will adjust your exclusive schedule shortly!"
+                else:
+                    llm_response_text = f"親愛的 {customer_data.get('full_name')} 您好，我們已收到您「{message}」的需求，專屬管家將盡快為您人工調整專屬行程！"
         else:
             print("⚠️ 尚未安裝 google-genai SDK，使用預設模擬回覆。")
-            llm_response_text = (
-                f"親愛的 {customer_data.get('full_name')} 您好！已經收到您希望「{message}」的需求。 "
-                f"我們為您挑選了最棒的活動，希望能為您的旅程增添更多美好回憶！"
-            )
+            if lang == "en":
+                llm_response_text = (
+                    f"Dear {customer_data.get('full_name')}! We've received your request for '{message}'. "
+                    f"We have handpicked the best activities to make your journey extraordinary!"
+                )
+            else:
+                llm_response_text = (
+                    f"親愛的 {customer_data.get('full_name')} 您好！已經收到您希望「{message}」的需求。 "
+                    f"我們為您挑選了最棒的活動，希望能為您的旅程增添更多美好回憶！"
+                )
 
         return {
             "success": True,

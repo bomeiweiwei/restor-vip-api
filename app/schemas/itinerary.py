@@ -17,6 +17,7 @@ class ItineraryDateGroupResponse(BaseModel):
 class ItineraryFeedbackRequest(BaseModel):
     message: str
     date: str
+    lang: str = "zh"  # 預設為中文，可傳入 "en"
 
 
 class ItineraryFeedbackResponse(BaseModel):
