@@ -11,29 +11,32 @@ from app.schemas.itinerary import (
     ItineraryScheduleResponse,
 )
 
-import os
 import json
 import uuid
-from dotenv import load_dotenv
-load_dotenv()
+from app.core.config import settings
 
-# ==========================================
-# 🛠️ 載入 Google GenAI 統一 SDK 與憑證設定
-# ==========================================
-CREDENTIALS_FILE = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-if CREDENTIALS_FILE and os.path.exists(CREDENTIALS_FILE):
-    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = CREDENTIALS_FILE
-    print(f"✅ 成功載入 GCP 憑證檔案: {CREDENTIALS_FILE}")
+# 直接從 Pydantic 的 settings 讀取（它會自動幫你對應環境變數）
+credentials_json_str = settings.google_credentials_json
+gcp_credentials = None
+
+if credentials_json_str:
+    try:
+        credentials_info = json.loads(credentials_json_str)
+        from google.oauth2 import service_account
+        gcp_credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        print("✅ 成功從 Pydantic Settings 載入 GCP 憑證字串。")
+    except Exception as e:
+        print(f"❌ 解析 GCP 憑證環境變數失敗: {e}")
 else:
-    print("⚠️ 未找到 GCP 憑證檔案，若需使用 Vertex AI 可能會發生驗證錯誤。")
+    print("⚠️ 未找到 GCP 憑證環境變數，若需使用 Vertex AI 可能會發生驗證錯誤。")
 
+# 2. 檢查 SDK 載入
 try:
     from google import genai
     from google.genai import types
     HAS_GENAI_SDK = True
 except ImportError:
     HAS_GENAI_SDK = False
-
 
 class ItineraryService:
     # 🚀 國籍代碼（CountryCode）與 LLM 輸出語系的對應表
