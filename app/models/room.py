@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, ForeignKey
+from sqlalchemy import Boolean, Column, Unicode, DateTime, Integer, String, ForeignKey
 
 from app.core.database import Base
 
@@ -17,7 +17,7 @@ class Room(Base):
         nullable=False
     )
 
-    RoomNo = Column(String(20))
+    RoomNo = Column(Unicode(20))
 
     FloorNo = Column(Integer)
 
