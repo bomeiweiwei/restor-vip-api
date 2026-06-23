@@ -16,7 +16,7 @@ import uuid
 from app.core.config import settings
 
 # 直接從 Pydantic 的 settings 讀取（它會自動幫你對應環境變數）
-credentials_json_str = settings.google_credentials_json
+credentials_json_str = settings.GOOGLE_CREDENTIALS_JSON
 gcp_credentials = None
 
 if credentials_json_str:
