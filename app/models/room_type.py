@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, Unicode, DateTime, Integer, String
 
 from app.core.database import Base
 
@@ -11,9 +11,9 @@ class RoomType(Base):
         primary_key=True
     )
 
-    RoomTypeName = Column(String(100))
+    RoomTypeName = Column(Unicode(100))
 
-    Description = Column(String(500))
+    Description = Column(Unicode(500))
 
     MaxAdultCount = Column(Integer)
 
