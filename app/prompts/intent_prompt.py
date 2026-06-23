@@ -73,12 +73,18 @@ QA 任務 qa_tasks 裡的 qa_category 只能使用以下值：
 - 如果使用者只是「問資訊」，intent = qa。
 - 如果使用者要求「幫我處理、幫我送、幫我預約、幫我取消、幫我報修、我要投訴、請客服聯絡我」，intent = service_request。
 - 如果問題同時包含查詢與實際請求，以 service_request 優先。
-- 如果不確定是否為渡假村相關資訊，intent = service_request。
+- 如果不確定是否為渡假村相關資訊，intent = unsupported。
+- 如果是閒聊、測試、髒話、無意義文字、政治、金融、程式問題、非旅宿服務問題，intent = unsupported。
+- 只有明確需要渡假村人員處理的旅客需求，才是 service_request。
 - 如果使用者問題包含多個查詢目的，請拆成多個 qa_tasks。
 - 每一個 qa_task 都要包含 qa_category 與 query。
 - query 是針對該分類整理後的查詢文字，請保留地點、時間、需求重點。
 - intent = qa 時，qa_tasks 至少要有一筆。
 - intent = service_request 時，qa_tasks 必須是空陣列。
+- service_request_message 為客服工單內容。
+- service_request_message 必須只保留渡假村人員可以實際處理的需求。
+- 移除閒聊、測試文字、動漫、遊戲、政治、金融、程式問題及其他與客服需求無關內容。
+- 如果一句話同時包含客服需求與無關問題，僅保留客服需求。
 - confidence 是 0 到 1 的數字。
 - reason 請用一句繁體中文簡述原因。
 
