@@ -46,7 +46,7 @@ class IntentClassifierService:
         )
 
     def _normalize_result(self, result: IntentResult) -> IntentResult:
-        if result.intent == "service_request":
+        if result.intent in ["service_request", "unsupported"]:
             result.qa_tasks = []
 
         if result.confidence < 0:

@@ -93,6 +93,7 @@ class AuthService:
             mobile_phone=customer.MobilePhone,
             room_type_name=room_type_name,
             room_no=room_no,
+            country_code=customer.CountryCode
         )
 
     def vip_magic_login(self, token: str):
@@ -179,4 +180,5 @@ class AuthService:
             "mobile_phone": customer.MobilePhone,
             "room_type_name": room_type_name,
             "room_no": room_no,
+            "country_code":customer.CountryCode
         }
