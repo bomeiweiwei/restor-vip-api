@@ -5,7 +5,7 @@ from app.core.config import settings
 
 def get_guide_model(provider: str | None = None):
     """
-    專屬導遊自己的 Gemini API client。
+    專屬導遊的 Gemini API client。
 
     注意：這裡使用 Google AI Studio API Key 方式，
     不覆蓋正式後端 app/ai/factory.py，避免影響既有功能。

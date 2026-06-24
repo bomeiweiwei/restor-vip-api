@@ -21,7 +21,7 @@ class GuideGeminiEmbedding2Service:
     """
     Guide 專用 Gemini Embedding 2 service。
 
-    保留新人專案 AI Studio API Key 呼叫方式，避免和正式後端
+    保留測試專案 AI Studio API Key 呼叫方式，避免和正式後端
     app/ai/embedding_factory.py 的 Vertex AI 設定互相影響。
     """
 
