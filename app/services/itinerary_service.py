@@ -23,7 +23,10 @@ if credentials_json_str:
     try:
         credentials_info = json.loads(credentials_json_str)
         from google.oauth2 import service_account
-        gcp_credentials = service_account.Credentials.from_service_account_info(credentials_info)
+        gcp_credentials = service_account.Credentials.from_service_account_info(
+            credentials_info,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
         print("✅ 成功從 Pydantic Settings 載入 GCP 憑證字串。")
     except Exception as e:
         print(f"❌ 解析 GCP 憑證環境變數失敗: {e}")
@@ -410,7 +413,12 @@ class ItineraryService:
 
         if HAS_GENAI_SDK:
             try:
-                client = genai.Client(vertexai=True, location='global') 
+                client = genai.Client(
+                    vertexai=True,
+                    project=settings.GOOGLE_CLOUD_PROJECT,
+                    location=settings.GOOGLE_CLOUD_LOCATION,
+                    credentials=gcp_credentials,
+                )
                 
                 print("🚀 正在呼叫 Vertex AI (Gemini) 模型...")
                 
