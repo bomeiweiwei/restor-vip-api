@@ -36,7 +36,7 @@ class QATask(BaseModel):
 
 
 class IntentResult(BaseModel):
-    intent: Literal["qa", "service_request"]
+    intent: Literal["qa", "service_request", "unsupported"]
 
     qa_tasks: list[QATask] = Field(
         default_factory=list,
@@ -45,6 +45,8 @@ class IntentResult(BaseModel):
 
     confidence: float
     reason: str
+
+    service_request_message: str | None = None
 
 class TextToSpeechRequest(BaseModel):
     text: str = Field(..., min_length=1)

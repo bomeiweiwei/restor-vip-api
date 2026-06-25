@@ -87,8 +87,13 @@ class SpeechToTextService:
                 nonlocal error_message
 
                 cancellation = evt.result.cancellation_details
-                error_message = f"辨識取消：{cancellation.reason}"
 
+                if cancellation.reason == speechsdk.CancellationReason.EndOfStream:
+                    # 正常結束，不視為錯誤
+                    done.set()
+                    return
+
+                error_message = f"辨識取消：{cancellation.reason}"
                 if cancellation.error_details:
                     error_message += f"，詳細：{cancellation.error_details}"
 

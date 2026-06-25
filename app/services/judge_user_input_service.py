@@ -10,6 +10,8 @@ from app.services.customer_service_request_service import (
     customer_service_request_service,
 )
 
+from app.schemas.assistant import AssistantResponse
+
 from sqlalchemy.orm import Session
 
 
@@ -29,9 +31,14 @@ class JudgeUserInputService:
                 message=message,
                 intent_result=result,
             )
-
-        return customer_service_request_service.process(
-            db=db, current_user=current_user, message=message
+        if result.intent == "service_request":
+            return customer_service_request_service.process(
+                db=db, current_user=current_user, message=result.service_request_message or message,
+            )
+        return AssistantResponse(
+            reply=(
+                "抱歉，我目前只能協助渡假村相關問題或客服需求。"
+            )
         )
 
 
