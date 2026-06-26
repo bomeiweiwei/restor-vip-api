@@ -4,6 +4,7 @@ from app.schemas.assistant import AssistantResponse
 from app.services.speech_to_text_service import speech_to_text_service
 from app.services.judge_user_input_service import judge_user_input_service
 from app.services.nlp_service import nlp_service
+from app.utils.markdown_utils import markdown_to_text
 
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,7 @@ class AssistantService:
         return AssistantResponse(
             text=text,
             reply=translated_reply,
+            speech_reply=markdown_to_text(translated_reply),
             language=language,
         )
 

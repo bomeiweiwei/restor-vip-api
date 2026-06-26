@@ -13,6 +13,7 @@ class AssistantRequest(BaseModel):
 class AssistantResponse(BaseModel):
     text: str | None = None
     reply: str
+    speech_reply: str | None = None
     language: Literal["zh-TW", "en-US", "ja-JP", "ko-KR"] | None = "zh-TW"
 
 class QATask(BaseModel):
