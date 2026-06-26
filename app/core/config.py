@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     AZURE_TRANSLATOR_ENDPOINT: str
     AZURE_TRANSLATOR_REGION: str
 
+    AZURE_OPENAI_TTS_URL: str
+    AZURE_OPENAI_TTS_KEY: str
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

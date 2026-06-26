@@ -1,57 +1,41 @@
 import os
-import azure.cognitiveservices.speech as speechsdk
-
+from openai import AzureOpenAI
 from app.core.config import settings
 
 def text_to_speech(text: str, language: str = "zh-TW") -> bytes | None:
-    speech_key = settings.AZURE_SPEECH_KEY
-    speech_region = settings.AZURE_SPEECH_REGION
+    """
+    將文字轉換為語音 (使用 Azure OpenAI TTS)
+    參考來源: app.py 的 azure_speech 實作
+    """
+    # 1. 從環境變數 (settings) 取得金鑰與端點
+    tts_key = getattr(settings, "AZURE_OPENAI_TTS_KEY", None)
+    tts_url = getattr(settings, "AZURE_OPENAI_TTS_URL", None)
 
-    if not speech_key or not speech_region:
-        raise RuntimeError("AZURE_SPEECH_KEY 或 AZURE_SPEECH_REGION 尚未設定")
+    # 檢查是否缺少設定
+    if not tts_key or not tts_url:
+        print("❌ [TTS 錯誤] 找不到 azure_openai_tts_key 或 azure_openai_tts_url")
+        raise RuntimeError("Azure OpenAI TTS 相關金鑰或端點尚未設定")
 
-    speech_config = speechsdk.SpeechConfig(
-        subscription=speech_key,
-        region=speech_region,
-    )
+    try:
+        # 2. 建立 Azure OpenAI 客戶端
+        client = AzureOpenAI(
+            api_key=tts_key,
+            api_version="2024-02-15-preview",
+            azure_endpoint=tts_url
+        )
 
-    speech_config.set_speech_synthesis_output_format(
-        speechsdk.SpeechSynthesisOutputFormat.Audio16Khz64KBitRateMonoMp3
-    )
+        # 3. 呼叫語音生成服務
+        response = client.audio.speech.create(
+            model="tts",   # 對應你在 Azure 後台設定的部署名稱
+            voice="nova",  # nova 音色原生支援多國語言，所以這裡忽略 language 參數
+            input=text
+        )
 
-    voice_map = {
-        "zh-TW": "zh-TW-HsiaoChenNeural",
-        "zh-Hant": "zh-TW-HsiaoChenNeural",
+        # 4. 成功回傳 MP3 二進位資料 (bytes)
+        print(f"✅ Speech synthesis success (Azure OpenAI) - Text preview: {text[:10]}...")
+        return response.content
 
-        "en-US": "en-US-JennyNeural",
-        "en": "en-US-JennyNeural",
-
-        "ja-JP": "ja-JP-NanamiNeural",
-        "ja": "ja-JP-NanamiNeural",
-
-        "ko-KR": "ko-KR-SunHiNeural",
-        "ko": "ko-KR-SunHiNeural",
-    }
-
-    speech_config.speech_synthesis_voice_name = voice_map.get(
-        language,
-        "zh-TW-HsiaoChenNeural",
-    )
-
-    speech_synthesizer = speechsdk.SpeechSynthesizer(
-        speech_config=speech_config,
-        audio_config=None,
-    )
-
-    result = speech_synthesizer.speak_text_async(text).get()
-
-    if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-        return result.audio_data
-
-    if result.reason == speechsdk.ResultReason.Canceled:
-        cancellation_details = result.cancellation_details
-
-        if cancellation_details.reason == speechsdk.CancellationReason.Error:
-            raise RuntimeError(cancellation_details.error_details)
-
-    return None
+    except Exception as e:
+        # 捕捉並印出錯誤，避免 500 錯誤被吞掉
+        print(f"❌ [TTS 錯誤] Speech synthesis failed: {e}")
+        return None
