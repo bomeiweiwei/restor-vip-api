@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from datetime import date, time
+from typing import Optional  # 🚀 補上這行
 
 
 class ItineraryScheduleResponse(BaseModel):
@@ -7,6 +8,7 @@ class ItineraryScheduleResponse(BaseModel):
     title: str
     content: str
     preference: str | None = None
+    imageUrl: Optional[str] = None
 
 
 class ItineraryDateGroupResponse(BaseModel):
