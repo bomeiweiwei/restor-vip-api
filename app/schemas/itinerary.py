@@ -7,6 +7,7 @@ class ItineraryScheduleResponse(BaseModel):
     title: str
     content: str
     preference: str | None = None
+    imageUrl: str | None = None
 
 
 class ItineraryDateGroupResponse(BaseModel):
