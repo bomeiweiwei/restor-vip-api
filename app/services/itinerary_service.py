@@ -96,7 +96,8 @@ class ItineraryService:
                 vs.ScheduleTime,
                 vs.Title,
                 vs.Content,
-                vs.Preference
+                vs.Preference,
+                vs.PicUrl
             FROM VipItineraryRecommendation vr
                 INNER JOIN VipItinerarySchedule vs 
                     ON vr.RecommendationId = vs.RecommendationId
@@ -143,6 +144,7 @@ class ItineraryService:
                     title=row["Title"] or "",
                     content=row["Content"] or "",
                     preference=row["Preference"] or "",
+                    imageUrl=row["PicUrl"] or "",
                 )
             )
 
