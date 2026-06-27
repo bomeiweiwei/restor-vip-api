@@ -1,3 +1,4 @@
+import base64  # 🚀 檔案頂部記得 import base64
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -11,9 +12,19 @@ from app.schemas.itinerary import (
     ItineraryScheduleResponse,
 )
 
+from app.services.text_to_speech_service import text_to_speech
+
 import json
 import uuid
 import random # 🚀 新增隨機庫來指派不同主題的預設圖
+
+# 🚀 新增：直接引入同目錄下 text_to_speech_service.py 的語音生成函式
+try:
+    from app.services.text_to_speech_service import text_to_speech
+    HAS_TTS_SERVICE = True
+except ImportError:
+    HAS_TTS_SERVICE = False
+    print("⚠️ 警告：無法引入 text_to_speech_service，語音導覽功能將暫時停用。")
 
 # 直接從 Pydantic 的 settings 讀取（它會自動幫你對應環境變數）
 credentials_json_str = settings.GOOGLE_CREDENTIALS_JSON
@@ -473,9 +484,39 @@ class ItineraryService:
             else:
                 llm_response_text = f"親愛的 {customer_data.get('full_name')} 您好！已經收到您的需求，希望能為您的旅程增添更多美好回憶！"
 
+        # =====================================================================
+        # 🎙️ 整合：呼叫 Text-To-Speech 服務生成音訊 Base64 字串
+        # =====================================================================
+        audio_payload_b64 = None
+        if HAS_TTS_SERVICE and llm_response_text:
+            try:
+                # 定義國籍與 TTS 請求語系的對應
+                lang_code_map = {
+                    "TW": "zh-TW",
+                    "US": "en-US",
+                    "JP": "ja-JP",
+                    "KR": "ko-KR"
+                }
+                target_tts_lang = lang_code_map.get(country_code, "zh-TW")
+                
+                print(f"🎙️ 正在呼叫 TTS 模組 (語系: {target_tts_lang}) 生成專屬管家語音...")
+                
+                # 呼叫引進的 `text_to_speech` 函式 (使用 GCP TTS 生成 MP3 二進位資料)
+                audio_bytes = text_to_speech(text=llm_response_text, language=target_tts_lang)
+                
+                if audio_bytes:
+                    # 將二進位音訊資料轉成 Base64 編碼字串，方便前端透過 Audio 物件直接播放
+                    audio_payload_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                    print("✅ 語音生成並成功進行 Base64 編碼！")
+                else:
+                    print("⚠️ TTS 回傳空音訊。")
+            except Exception as tts_err:
+                print(f"❌ [TTS 串接錯誤] 語音生成失敗: {tts_err}")
+
         return {
             "success": True,
             "message": llm_response_text, 
+            "audio_base64": audio_payload_b64 # 🚀 攜帶 Base64 音訊至前端
         }
 
 itinerary_service = ItineraryService()

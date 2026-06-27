@@ -23,3 +23,4 @@ azure-core
 openai
 httpx
 tiktoken
+google-cloud-texttospeech
