@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     AZURE_STORAGE_CONTAINER_NAME: str = ""
     AZURE_STORAGE_CONNECTION_STRING: str = ""
 
+    ASSET_BASE_URL: str = ""
 
     class Config:
         env_file = ".env"

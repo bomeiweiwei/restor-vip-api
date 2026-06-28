@@ -9,6 +9,7 @@ from app.api.attraction_router import router as attraction_router
 
 from app.core.config import settings
 
+
 app = FastAPI(
     title="Resort VIP API",
     version="1.0.0",
