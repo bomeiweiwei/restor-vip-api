@@ -17,6 +17,8 @@ from app.services.text_to_speech_service import text_to_speech
 
 from app.dependencies.auth_dependency import get_current_user
 
+from app.utils.text_to_speech_utils import clean_tts_text
+
 router = APIRouter(
     prefix="/api/assistant",
     tags=["Assistant"],
@@ -61,7 +63,7 @@ async def text_to_speech_api(
 ):
     try:
         audio_bytes = text_to_speech(
-            text=request.text,
+            text=clean_tts_text(request.text),
             language=request.language,
         )
 
