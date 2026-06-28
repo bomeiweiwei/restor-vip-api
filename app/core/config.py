@@ -54,6 +54,40 @@ class Settings(BaseSettings):
     AZURE_TRANSLATOR_ENDPOINT: str
     AZURE_TRANSLATOR_REGION: str
 
+
+    GUIDE_EMBEDDING_PROVIDER: str = "gemini"
+    GUIDE_MODEL_PROVIDER: str = "gemini"
+    GUIDE_GEMINI_API_KEY: Optional[str] = None
+    GUIDE_GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-2"
+    GUIDE_EMBEDDING_DIM: int = 3072
+    GUIDE_GEMINI_GENERATION_MODEL: str = "gemini-2.5-flash-lite"
+   
+
+    # =========================
+    # Guide vector DB backend
+    # 專屬導遊向量資料庫來源：qdrant / faiss
+    # =========================
+    GUIDE_VECTOR_DB_BACKEND: str = "qdrant"
+
+    # =========================
+    # Guide Qdrant Cloud
+    # 專屬導遊專用，避免和正式後端其他 Qdrant 設定混用。
+    # =========================
+    GUIDE_QDRANT_URL: str = ""
+    GUIDE_QDRANT_API_KEY: str = ""
+    GUIDE_QDRANT_COLLECTION_NAME: str = "resort_guide"
+    GUIDE_QDRANT_TIMEOUT_SECONDS: int = 180
+
+
+    # =========================
+    # Azure Blob Storage for Guide data
+    # Azure Blob 保存 Guide 原始 data、圖片、PDF 等資料。
+    # =========================
+    AZURE_STORAGE_AUTH_MODE: str = "connection_string"
+    AZURE_STORAGE_ACCOUNT_NAME: str = ""
+    AZURE_STORAGE_CONTAINER_NAME: str = ""
+    AZURE_STORAGE_CONNECTION_STRING: str = ""
+
     ASSET_BASE_URL: str = ""
 
     class Config:
