@@ -23,3 +23,7 @@ azure-core
 openai
 httpx
 tiktoken
+pypdf
+Pillow
+pillow-heif
+azure-storage-blob
