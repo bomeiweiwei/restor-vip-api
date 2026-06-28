@@ -84,3 +84,4 @@ faiss-cpu
 pypdf
 Pillow
 pillow-heif
+azure-storage-blob

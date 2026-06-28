@@ -1,11 +1,11 @@
-import hashlib
+from io import BytesIO
 import mimetypes
-import re
 from pathlib import Path
 from urllib.parse import quote
 
+from azure.storage.blob import BlobServiceClient
 from fastapi import HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 from app.core.config import settings
 
@@ -29,82 +29,91 @@ HEIC_EXTENSIONS = {".heic", ".heif"}
 
 
 class GuideImageService:
-    def project_root(self) -> Path:
-        return Path(settings.GUIDE_PROJECT_ROOT).resolve()
+    """
+    Guide 代表圖片讀取服務。
 
-    def converted_image_root(self) -> Path:
-        path = Path(settings.GUIDE_CONVERTED_IMAGE_DIR)
-        if not path.is_absolute():
-            path = self.project_root() / path
-        path.mkdir(parents=True, exist_ok=True)
-        return path.resolve()
+    正式模式：
+    - metadata 的 source_path 會被視為 Azure Blob name，例如 data/raw/RAG知識庫/.../images/main.JPG。
+    - 不再從本機 data/raw 讀圖片。
+    - HEIC / HEIF 圖片會在記憶體中轉成 JPG 後回傳，不寫入本機 converted_images。
 
-    def resolve_project_image_path(self, image_path: str | None) -> Path | None:
+    舊版本機設定保留備查，不再於正式流程使用：
+    # GUIDE_CONVERTED_IMAGE_DIR=data/processed/converted_images
+    # /api/guide/converted-images/{filename}
+    """
+
+    def __init__(self):
+        self._blob_service_client: BlobServiceClient | None = None
+        self._container_client = None
+
+    @property
+    def container_client(self):
+        if self._container_client is None:
+            if not settings.AZURE_STORAGE_CONNECTION_STRING:
+                raise RuntimeError("AZURE_STORAGE_CONNECTION_STRING 尚未設定。")
+            if not settings.AZURE_STORAGE_CONTAINER_NAME:
+                raise RuntimeError("AZURE_STORAGE_CONTAINER_NAME 尚未設定。")
+
+            self._blob_service_client = BlobServiceClient.from_connection_string(
+                settings.AZURE_STORAGE_CONNECTION_STRING
+            )
+            self._container_client = self._blob_service_client.get_container_client(
+                settings.AZURE_STORAGE_CONTAINER_NAME
+            )
+        return self._container_client
+
+    @staticmethod
+    def _normalize_blob_image_path(image_path: str | None) -> str | None:
         if not image_path:
             return None
 
-        normalized = str(image_path).replace("\\", "/").lstrip("/")
-        requested_path = (self.project_root() / normalized).resolve()
+        blob_name = str(image_path).replace("\\", "/").lstrip("/")
 
-        # 限制只能讀取專案內檔案，避免路徑穿越。
-        try:
-            requested_path.relative_to(self.project_root())
-        except ValueError:
+        # 只允許讀取 data/ 底下的知識庫圖片，避免把 API 變成任意 Blob 下載器。
+        data_prefix = str(getattr(settings, "GUIDE_BLOB_DATA_PREFIX", "data/") or "data/").strip("/") + "/"
+        if not blob_name.startswith(data_prefix):
             return None
 
-        if requested_path.is_file():
-            return requested_path
+        if Path(blob_name).suffix.lower() not in IMAGE_EXTENSIONS:
+            return None
 
-        # 支援 .jpg / .JPG 大小寫差異。
-        parent = requested_path.parent
-        target_name_lower = requested_path.name.lower()
-        if parent.is_dir():
-            for child in parent.iterdir():
-                if child.is_file() and child.name.lower() == target_name_lower:
-                    return child.resolve()
+        return blob_name
 
-        return None
+    def _download_blob_bytes(self, blob_name: str) -> bytes:
+        try:
+            blob_client = self.container_client.get_blob_client(blob_name)
+            return blob_client.download_blob().readall()
+        except Exception as e:
+            raise HTTPException(
+                status_code=404,
+                detail=f"找不到 Azure Blob 圖片：{blob_name}，原因：{e}",
+            ) from e
 
-    def convert_heic_to_jpg(self, source_path: Path) -> Path:
+    @staticmethod
+    def _convert_image_bytes_to_jpeg(image_bytes: bytes, source_name: str) -> bytes:
         if not HEIC_CONVERT_AVAILABLE:
             raise RuntimeError("尚未安裝 Pillow 或 pillow-heif，無法轉換 HEIC / HEIF。")
 
-        source_path = source_path.resolve()
-        cache_key_text = f"{source_path}|{source_path.stat().st_mtime_ns}"
-        cache_key = hashlib.sha1(cache_key_text.encode("utf-8")).hexdigest()[:16]
+        try:
+            with Image.open(BytesIO(image_bytes)) as image:
+                image = ImageOps.exif_transpose(image)
+                if image.mode != "RGB":
+                    image = image.convert("RGB")
 
-        safe_stem = re.sub(
-            r"[^a-zA-Z0-9_\u4e00-\u9fff-]+",
-            "_",
-            source_path.stem,
-        ).strip("_") or "converted_image"
-
-        output_path = self.converted_image_root() / f"{safe_stem}_{cache_key}.jpg"
-
-        if output_path.is_file() and output_path.stat().st_size > 0:
-            return output_path
-
-        with Image.open(source_path) as image:
-            image = ImageOps.exif_transpose(image)
-            if image.mode != "RGB":
-                image = image.convert("RGB")
-            image.save(output_path, format="JPEG", quality=90, optimize=True)
-
-        return output_path
+                buffer = BytesIO()
+                image.save(buffer, format="JPEG", quality=90, optimize=True)
+                return buffer.getvalue()
+        except Exception as e:
+            raise RuntimeError(f"圖片轉 JPG 失敗：{source_name}，原因：{e}") from e
 
     def image_path_to_url(self, image_path: str | None) -> str | None:
-        existing_path = self.resolve_project_image_path(image_path)
-        if existing_path is None:
+        """把 Qdrant payload 的 source_path 轉成前端可讀取的 API URL。"""
+        blob_name = self._normalize_blob_image_path(image_path)
+        if blob_name is None:
             return None
 
-        suffix = existing_path.suffix.lower()
-
-        if suffix in HEIC_EXTENSIONS:
-            jpg_path = self.convert_heic_to_jpg(existing_path)
-            return f"/guide/converted-images/{quote(jpg_path.name)}"
-
-        relative_path = existing_path.relative_to(self.project_root()).as_posix()
-        return f"/guide/images/{quote(relative_path, safe='/')}"
+        # 讓 /api/guide/images/{image_path:path} 直接處理原圖；HEIC 也由同一個 endpoint 即時轉 JPG。
+        return f"/api/guide/images/{quote(blob_name, safe='/')}"
 
     def attach_representative_image_url(self, place_result: dict) -> dict:
         result = dict(place_result or {})
@@ -129,38 +138,35 @@ class GuideImageService:
         result["representative_image_url"] = image_urls[0] if image_urls else ""
         return result
 
-    def get_image_response(self, image_path: str) -> FileResponse:
-        path = self.resolve_project_image_path(image_path)
-        if path is None or not path.is_file():
-            raise HTTPException(status_code=404, detail="找不到圖片")
+    def get_image_response(self, image_path: str) -> Response:
+        """從 Azure Blob 讀取代表圖片並回傳給前端。"""
+        blob_name = self._normalize_blob_image_path(image_path)
+        if blob_name is None:
+            raise HTTPException(status_code=403, detail="不允許讀取此圖片路徑或檔案類型")
 
-        if path.suffix.lower() not in IMAGE_EXTENSIONS:
-            raise HTTPException(status_code=403, detail="不允許讀取此檔案類型")
+        suffix = Path(blob_name).suffix.lower()
+        image_bytes = self._download_blob_bytes(blob_name)
 
-        # HEIC 不直接回給瀏覽器，請透過 image_path_to_url 轉成 converted-images。
-        if path.suffix.lower() in HEIC_EXTENSIONS:
-            converted = self.convert_heic_to_jpg(path)
-            return FileResponse(converted, media_type="image/jpeg")
+        if suffix in HEIC_EXTENSIONS:
+            try:
+                jpg_bytes = self._convert_image_bytes_to_jpeg(image_bytes, blob_name)
+            except RuntimeError as e:
+                raise HTTPException(status_code=500, detail=str(e)) from e
 
-        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        return FileResponse(path, media_type=media_type)
+            return Response(content=jpg_bytes, media_type="image/jpeg")
 
-    def get_converted_image_response(self, filename: str) -> FileResponse:
-        converted_root = self.converted_image_root()
-        requested_path = (converted_root / filename).resolve()
+        media_type = mimetypes.guess_type(blob_name)[0] or "application/octet-stream"
+        return Response(content=image_bytes, media_type=media_type)
 
-        try:
-            requested_path.relative_to(converted_root)
-        except ValueError:
-            raise HTTPException(status_code=403, detail="不允許讀取此路徑")
-
-        if not requested_path.is_file():
-            raise HTTPException(status_code=404, detail="找不到轉換後圖片")
-
-        if requested_path.suffix.lower() not in {".jpg", ".jpeg"}:
-            raise HTTPException(status_code=403, detail="不允許讀取此檔案類型")
-
-        return FileResponse(requested_path, media_type="image/jpeg")
+    def get_converted_image_response(self, filename: str) -> Response:
+        """
+        舊版 HEIC converted-images endpoint。
+        正式 Azure Blob 模式不再產生本機 converted 圖片，請改用 /api/guide/images/{path}。
+        """
+        raise HTTPException(
+            status_code=410,
+            detail="converted-images 已停用；HEIC / HEIF 會由 /api/guide/images/{image_path} 即時轉換。",
+        )
 
 
 guide_image_service = GuideImageService()

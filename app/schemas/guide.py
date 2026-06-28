@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -6,6 +8,12 @@ class GuideAnalyzeResponse(BaseModel):
     title: str
     location: str
     guideMessage: str
-    audioUrl: str = ""
-    imageUrl: str = ""
-    user_text: str = ""
+    audioUrl: Optional[str] = ""
+    imageUrl: Optional[str] = ""
+    user_text: Optional[str] = ""
+    responseLanguage: Optional[str] = "zh-TW"
+
+
+class GuideTextToSpeechRequest(BaseModel):
+    text: str
+    language: str = "zh-TW"

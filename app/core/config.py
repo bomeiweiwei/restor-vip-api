@@ -55,29 +55,38 @@ class Settings(BaseSettings):
     AZURE_TRANSLATOR_REGION: str
 
 
-    # guide 專屬導遊：保留guid專案原本vb路徑 (data/) 架構
-    GUIDE_PROJECT_ROOT: str = "."
-    GUIDE_SOURCE_DIR: str = "./data/raw/RAG知識庫"
-    GUIDE_PROCESSED_DIR: str = "./data/processed"
-    GUIDE_VECTOR_DB_DIR: str = "./data/vector_db/gemini_embedding_2"
-    GUIDE_VECTOR_INDEX_FILE: str = "resort_knowledge.faiss"
-    GUIDE_VECTOR_METADATA_FILE: str = "resort_knowledge.pkl"
-    GUIDE_VECTOR_MANIFEST_FILE: str = "vector_manifest.json"
-    GUIDE_CONVERTED_IMAGE_DIR: str = "./data/processed/converted_images"
-    GUIDE_UPLOAD_DIR: str = "./uploads/guide"
-
     GUIDE_EMBEDDING_PROVIDER: str = "gemini"
     GUIDE_MODEL_PROVIDER: str = "gemini"
     GUIDE_GEMINI_API_KEY: Optional[str] = None
     GUIDE_GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-2"
     GUIDE_EMBEDDING_DIM: int = 3072
     GUIDE_GEMINI_GENERATION_MODEL: str = "gemini-2.5-flash-lite"
+   
 
-    GUIDE_TOP_K: int =8   # 最後拿來判斷景點與回答的資料數量，取前 8 筆相似結果
-    GUIDE_FETCH_K: int = 80    # FAISS 先找出相似度最高的 80 筆，再從這 80 筆裡面取前 8 筆來生成回答
-    GUIDE_SCORE_THRESHOLD: float = 0.65  # 最低信心門檻
-    GUIDE_ENABLE_TTS: bool = False  # 是否啟用文字轉語音
+    # =========================
+    # Guide vector DB backend
+    # 專屬導遊向量資料庫來源：qdrant / faiss
+    # =========================
+    GUIDE_VECTOR_DB_BACKEND: str = "qdrant"
 
+    # =========================
+    # Guide Qdrant Cloud
+    # 專屬導遊專用，避免和正式後端其他 Qdrant 設定混用。
+    # =========================
+    GUIDE_QDRANT_URL: str = ""
+    GUIDE_QDRANT_API_KEY: str = ""
+    GUIDE_QDRANT_COLLECTION_NAME: str = "resort_guide"
+    GUIDE_QDRANT_TIMEOUT_SECONDS: int = 180
+
+
+    # =========================
+    # Azure Blob Storage for Guide data
+    # Azure Blob 保存 Guide 原始 data、圖片、PDF 等資料。
+    # =========================
+    AZURE_STORAGE_AUTH_MODE: str = "connection_string"
+    AZURE_STORAGE_ACCOUNT_NAME: str = ""
+    AZURE_STORAGE_CONTAINER_NAME: str = ""
+    AZURE_STORAGE_CONNECTION_STRING: str = ""
 
 
     class Config:

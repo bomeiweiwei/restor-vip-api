@@ -21,8 +21,11 @@ class GuideGeminiEmbedding2Service:
     """
     Guide 專用 Gemini Embedding 2 service。
 
-    保留測試專案 AI Studio API Key 呼叫方式，避免和正式後端
-    app/ai/embedding_factory.py 的 Vertex AI 設定互相影響。
+    這個 service 支援：
+    1. 文字查詢 embedding
+    2. 文字知識庫 embedding
+    3. 本機圖片檔 embedding，保留舊版相容
+    4. 圖片 bytes embedding，用於 Azure Blob 圖片與使用者上傳圖片，不需要寫入 uploads
     """
 
     def __init__(self):
@@ -90,13 +93,42 @@ class GuideGeminiEmbedding2Service:
         if suffix == ".png":
             return image_path.read_bytes(), "image/png"
 
+        return GuideGeminiEmbedding2Service._image_bytes_to_supported_bytes(
+            image_bytes=image_path.read_bytes(),
+            filename=image_path.name,
+            mime_type=None,
+        )
+
+    @staticmethod
+    def _image_bytes_to_supported_bytes(
+        image_bytes: bytes,
+        filename: str | None = None,
+        mime_type: str | None = None,
+    ) -> tuple[bytes, str]:
+        """
+        將圖片 bytes 轉成 Gemini 較穩定支援的格式。
+
+        - JPG / PNG：直接送出
+        - HEIC / HEIF / WEBP / BMP / TIFF：用 Pillow 在記憶體中轉 PNG
+        - 不會寫入本機 uploads
+        """
+        filename = filename or "uploaded_image"
+        suffix = Path(filename).suffix.lower()
+        mime_type = (mime_type or "").lower()
+
+        if suffix in [".jpg", ".jpeg"] or mime_type == "image/jpeg":
+            return image_bytes, "image/jpeg"
+
+        if suffix == ".png" or mime_type == "image/png":
+            return image_bytes, "image/png"
+
         if suffix in [".heic", ".heif"] and not HEIF_SUPPORT_ENABLED:
             raise RuntimeError(
                 "目前環境尚未安裝 pillow-heif，無法讀取 HEIC / HEIF 圖片。"
             )
 
         try:
-            with Image.open(image_path) as img:
+            with Image.open(BytesIO(image_bytes)) as img:
                 img = ImageOps.exif_transpose(img)
                 img = img.convert("RGB")
 
@@ -105,22 +137,44 @@ class GuideGeminiEmbedding2Service:
                 return buffer.getvalue(), "image/png"
 
         except UnidentifiedImageError as e:
-            raise ValueError(f"無法辨識圖片格式：{image_path}") from e
+            raise ValueError(f"無法辨識圖片格式：{filename}") from e
 
     def embed_image_file(self, image_path: str | Path) -> np.ndarray:
+        """保留舊版本機檔案 embedding 介面。正式查詢上傳圖片時請用 embed_image_bytes。"""
         image_path = Path(image_path)
 
         if not image_path.exists():
             raise FileNotFoundError(f"找不到圖片：{image_path}")
 
         image_bytes, mime_type = self._image_to_supported_bytes(image_path)
+        return self.embed_image_bytes(
+            image_bytes=image_bytes,
+            mime_type=mime_type,
+            filename=image_path.name,
+        )
+
+    def embed_image_bytes(
+        self,
+        image_bytes: bytes,
+        mime_type: str | None = None,
+        filename: str | None = None,
+    ) -> np.ndarray:
+        """直接將圖片 bytes 建立 embedding，不儲存使用者上傳檔案。"""
+        if not image_bytes:
+            raise ValueError("embed_image_bytes 收到空圖片 bytes。")
+
+        supported_bytes, supported_mime_type = self._image_bytes_to_supported_bytes(
+            image_bytes=image_bytes,
+            filename=filename,
+            mime_type=mime_type,
+        )
 
         result = self.client.models.embed_content(
             model=self.model_name,
             contents=[
                 types.Part.from_bytes(
-                    data=image_bytes,
-                    mime_type=mime_type,
+                    data=supported_bytes,
+                    mime_type=supported_mime_type,
                 )
             ],
             config=self._config(),
