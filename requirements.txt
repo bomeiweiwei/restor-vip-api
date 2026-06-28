@@ -27,3 +27,5 @@ pypdf
 Pillow
 pillow-heif
 azure-storage-blob
+google-cloud-texttospeech>=2.29.0
+google-auth>=2.0.0

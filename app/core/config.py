@@ -90,6 +90,17 @@ class Settings(BaseSettings):
 
     ASSET_BASE_URL: str = ""
 
+    TTS_PROVIDER: str = "azure"
+
+    AZURE_OPENAI_TTS_ENDPOINT: Optional[str] = None
+    AZURE_OPENAI_TTS_KEY: Optional[str] = None
+    AZURE_OPENAI_TTS_VERSION: Optional[str] = None
+    AZURE_OPENAI_TTS_DEPLOYMENT: Optional[str] = None
+    AZURE_OPENAI_TTS_VOICE: Optional[str] = None
+
+    GEMINI_TTS_MODEL: Optional[str] = None
+    GEMINI_TTS_VOICE: Optional[str] = None
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

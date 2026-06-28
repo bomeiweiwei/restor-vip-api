@@ -13,11 +13,10 @@ from app.services.assistant_service import (
     assistant_service,
 )
 
-from app.services.text_to_speech_service import text_to_speech
+from app.services.text_to_speech_service import text_to_speech_service
 
 from app.dependencies.auth_dependency import get_current_user
 
-# from app.utils.text_to_speech_utils import clean_tts_text
 
 router = APIRouter(
     prefix="/api/assistant",
@@ -62,7 +61,7 @@ async def text_to_speech_api(
     db: Session = Depends(get_db),
 ):
     try:
-        audio_bytes = text_to_speech(
+        audio_bytes, media_type = text_to_speech_service.synthesize(
             text=request.text,
             language=request.language,
         )
@@ -75,7 +74,7 @@ async def text_to_speech_api(
 
         return Response(
             content=audio_bytes,
-            media_type="audio/mpeg",
+            media_type=media_type,
         )
 
     except RuntimeError as e:
