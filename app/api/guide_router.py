@@ -6,8 +6,8 @@ from app.dependencies.auth_dependency import get_current_user
 from app.schemas.guide import GuideAnalyzeResponse, GuideTextToSpeechRequest
 from app.services.guide_service import guide_service
 from app.services.guide_image_service import guide_image_service
-from app.services.text_to_speech_service import text_to_speech
 
+from app.services.text_to_speech_service import text_to_speech_service
 
 router = APIRouter(
     prefix="/api/guide",
@@ -63,7 +63,7 @@ async def guide_text_to_speech_api(
         print("[GUIDE TTS] language =", request.language)
         print("[GUIDE TTS] text length =", len(request.text))
 
-        audio_bytes = text_to_speech(
+        audio_bytes, media_type = text_to_speech_service.synthesize(
             text=request.text,
             language=request.language,
         )
@@ -76,7 +76,7 @@ async def guide_text_to_speech_api(
 
         return Response(
             content=audio_bytes,
-            media_type="audio/mpeg",
+            media_type=media_type,
         )
 
     except RuntimeError as e:

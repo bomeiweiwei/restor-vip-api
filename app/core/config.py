@@ -34,10 +34,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL_NAME: Optional[str] = None
 
-    GOOGLE_CREDENTIALS_JSON: Optional[str] = None
+    GOOGLE_CREDENTIALS_JSON: str
     GOOGLE_APPLICATION_CREDENTIALS: Optional[str] = None
-    GOOGLE_CLOUD_PROJECT: Optional[str] = None
-    GOOGLE_CLOUD_LOCATION: Optional[str] = None
+    GOOGLE_CLOUD_PROJECT: str
+    GOOGLE_CLOUD_LOCATION: str
 
     LMSTUDIO_BASE_URL: Optional[str] = None
     LMSTUDIO_API_KEY: Optional[str] = None
@@ -89,6 +89,17 @@ class Settings(BaseSettings):
     AZURE_STORAGE_CONNECTION_STRING: str = ""
 
     ASSET_BASE_URL: str = ""
+
+    TTS_PROVIDER: str = "gemini"
+
+    AZURE_OPENAI_TTS_ENDPOINT: str
+    AZURE_OPENAI_TTS_KEY: str
+    AZURE_OPENAI_TTS_VERSION: str = "2025-03-01-preview"
+    AZURE_OPENAI_TTS_DEPLOYMENT: str = "gpt-4o-mini-tts"
+    AZURE_OPENAI_TTS_VOICE: str = "nova"
+
+    GEMINI_TTS_MODEL: str = "gemini-2.5-flash-preview-tts"
+    GEMINI_TTS_VOICE: str = "Kore"
 
     class Config:
         env_file = ".env"
