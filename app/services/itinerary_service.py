@@ -11,6 +11,8 @@ from app.schemas.itinerary import (
     ItineraryScheduleResponse,
 )
 
+from app.utils.image_url import build_image_url
+
 import json
 import uuid
 from app.core.config import settings
@@ -144,7 +146,7 @@ class ItineraryService:
                     title=row["Title"] or "",
                     content=row["Content"] or "",
                     preference=row["Preference"] or "",
-                    imageUrl=row["PicUrl"] or "",
+                    imageUrl=build_image_url(row["PicUrl"]),
                 )
             )
 

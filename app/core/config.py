@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     AZURE_TRANSLATOR_ENDPOINT: str
     AZURE_TRANSLATOR_REGION: str
 
+    ASSET_BASE_URL: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
