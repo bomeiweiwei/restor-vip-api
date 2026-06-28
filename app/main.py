@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.api.bus_router import router as bus_router
 from app.api.auth_router import router as auth_router
 from app.api.assistant_router import router as assistant_router
-from app.api.itinerary_router import router as itinerary_router
+#from app.api.itinerary_router import router as itinerary_router
 from app.api.attraction_router import router as attraction_router
-
+#from app.api.openweather import router as weather_router
+from app.api.weather_router import router as weather_router
 from app.core.config import settings
 
 app = FastAPI(
@@ -25,9 +26,10 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(assistant_router)
-app.include_router(itinerary_router)
+#app.include_router(itinerary_router)
 app.include_router(attraction_router)
-
+app.include_router(weather_router)
+app.include_router(bus_router)
 
 @app.get("/")
 def root():

@@ -19,6 +19,7 @@ class AuthService:
         self.db = db
 
     def login(self, request: LoginRequest) -> LoginResponse:
+                
         result = (
             self.db.query(
                 CustomerVipAccount,

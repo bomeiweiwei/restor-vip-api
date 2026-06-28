@@ -43,7 +43,17 @@ class Settings(BaseSettings):
     LMSTUDIO_API_KEY: Optional[str] = None
     LMSTUDIO_MODEL_NAME: Optional[str] = None
 
-    OPEN_WEATHER_MAP_API_KEY: str
+    OPEN_WEATHER_MAP_API_KEY: str | None = None
+    WEATHER_API_BASE: str = "https://api.openweathermap.org/data/2.5" 
+
+    CWA_API_KEY: str
+    CWA_DATASET_ID: str = "F-D0047-001"
+    CWA_LOCATION_NAME: str = "五結鄉"
+    
+    TDX_CLIENT_ID: str
+    TDX_CLIENT_SECRET: str
+    TDX_API_BASE: str = "https://tdx.transportdata.tw/api/basic/v2"
+    TDX_BUS_CITY: str = "YilanCounty"
 
     QDRANT_URL: str
     QDRANT_API_KEY: str
