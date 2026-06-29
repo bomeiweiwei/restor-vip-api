@@ -17,7 +17,7 @@ import json
 import uuid
 from app.core.config import settings
 
-# 直接從 Pydantic 的 settings 讀取（它會自動幫你對應環境變數）
+# 直接從 Pydantic 的 settings 讀取（它會自動對應環境變數）
 credentials_json_str = settings.GOOGLE_CREDENTIALS_JSON
 gcp_credentials = None
 
@@ -35,7 +35,7 @@ if credentials_json_str:
 else:
     print("⚠️ 未找到 GCP 憑證環境變數，若需使用 Vertex AI 可能會發生驗證錯誤。")
 
-# 2. 檢查 SDK 載入
+# 檢查 SDK 載入
 try:
     from google import genai
     from google.genai import types
@@ -90,6 +90,7 @@ class ItineraryService:
         customer_id = current_user.get("customer_id")
         login_account = current_user.get("login_account")
 
+        # 🚀 修正：將 ORDER BY 改為 ASC（日期遞增正序），使前後端天數與時間對應邏輯保持完全一致
         sql = text("""
             SELECT 
                 vr.RecommendationId,
@@ -112,7 +113,7 @@ class ItineraryService:
                 AND cva.CustomerVipAccountId = :customer_vip_account_id
                 AND cva.LoginAccount = :login_account
             ORDER BY 
-                vs.ScheduleDate DESC, 
+                vs.ScheduleDate ASC, 
                 vs.ScheduleTime
         """)
 
@@ -128,9 +129,7 @@ class ItineraryService:
         grouped: dict[str, list[ItineraryScheduleResponse]] = {}
 
         for row in rows:
-
             schedule_date = row["ScheduleDate"]
-
             date_text = (
                 schedule_date.strftime("%Y-%m-%d")
                 if hasattr(schedule_date, "strftime")
@@ -151,7 +150,6 @@ class ItineraryService:
             )
 
         result = []
-
         for date_text, schedules in grouped.items():
             result.append(
                 ItineraryDateGroupResponse(
@@ -162,9 +160,8 @@ class ItineraryService:
 
         return result
     
-    # 顧客基本資料
     def get_customer_prompt_data(self, db: Session, customer_id: str):
-        """撈取顧客與訂房詳細資料"""
+        """撈取顧客與訂房詳細資料以提供 LLM 脈絡"""
         sql = text("""
             SELECT 
                 c.FullName AS full_name,
@@ -229,13 +226,14 @@ class ItineraryService:
 
     def _get_knowledge_item_by_source_file(self, db: Session, source_file: str):
         """
-        根據向量庫比對到的 source_file，回關聯式資料庫撈取真實的景點介紹
+        根據向量庫比對到的 source_file，回關聯式資料庫撈取真實的景點介紹與圖片網址
         """
         sql = text("""
             SELECT 
                 PlaceName AS place_name, 
                 Feature AS feature, 
-                Category AS category 
+                Category AS category,
+                PicUrl AS pic_url
             FROM ResortKnowledgeItem 
             WHERE SourceFile = :source_file
         """)
@@ -246,7 +244,6 @@ class ItineraryService:
         except Exception as e:
             print(f"⚠️ 查詢景點 {source_file} 時發生錯誤: {e}")
             return None
-
 
     def get_candidate_spots_from_vdb(self, db: Session, query: str, top_k: int = 10) -> list[dict]:
         """
@@ -283,7 +280,8 @@ class ItineraryService:
                     "title": db_item.get("place_name"),
                     "content": feature[:100], 
                     "preference": db_item.get("category"),
-                    "similarity_score": score 
+                    "pic_url": db_item.get("pic_url") or "",  # 🚀 保留並提供原始圖片欄位
+                    "similarity_score": score
                 }
             )
 
@@ -297,22 +295,22 @@ class ItineraryService:
         current_user: dict,
         message: str,
         date: str,
-        lang: str = "zh"  # 前端傳入值保留作為備用
+        lang: str = "zh"
     ):
         customer_id = current_user.get("customer_id")
 
         if not customer_id:
             raise ValueError("無法取得當前使用者的 Customer ID")
 
-        # 1. 取得顧客基本資料（內含資料庫撈出的 CountryCode）
+        # 1. 取得顧客基本資料
         customer_data = self.get_customer_prompt_data(db, customer_id)
         country_code = customer_data.get("country_code", "TW")
         
-        # 🚀 依據國籍代碼判斷目標顯示語系，若無匹配則預設 zh-TW
+        # 依據國籍代碼判斷目標顯示語系，若無匹配則預設 zh-TW
         determined_lang = self.LANGUAGE_MAP.get(country_code, "zh-TW")
         print(f"🌍 數據庫顧客國籍：{country_code} -> 系統自動切換語系至：{determined_lang}")
 
-        # 1.5 取得該日期「原本的行程規劃」
+        # 1.5 取得該日期原本的行程規劃
         all_itineraries = self.get_exclusive_itinerary(db, current_user)
         target_itinerary = next((group for group in all_itineraries if group.date == date), None)
         
@@ -365,7 +363,8 @@ class ItineraryService:
             f"   - In case of rejection: 'reply_message' must be a polite refusal written in {cfg['reply_lang']} explaining you can only help with itinerary planning, and the 'schedules' array must remain identical to the original schedule provided below.\n"
             f"2. If the request is valid, adjust the original schedule based on user feedback. Keep original plans/times where possible, or clear them if requested.\n"
             f"3. **CRITICAL PREFERENCE RULE**: For the 'preference' field of each schedule item, regardless of output language, you MUST ONLY output one of these exact Chinese category names: '觀光園區', '在地文化', '餐飲美食', '溫泉公園', or '其他'. DO NOT translate or modify this specific field so frontend filters remain functional!\n"
-            f"4. **MUST output in JSON format** with two fields:\n"
+            f"4. **STRICT RAG SCOPE GUARDRAIL**: If the user requests to add or change to a specific attraction, destination, restaurant, or activity that is NOT listed under '### Candidate Spots Recommended by System', you MUST NOT add it to the 'schedules' array. Instead, you should explain politely in the 'reply_message' (in {cfg['reply_lang']}) that the requested spot is currently unavailable or outside our resort's service scope, and keep the original itinerary unchanged for that specific slot.\n"
+            f"5. **MUST output in JSON format** with two fields:\n"
             f'   - "reply_message": Warm and friendly response to the customer written in {cfg["reply_lang"]} (100-150 words).\n'
             f'   - "schedules": Array of updated daily items. Key texts ("title", "content") MUST be entirely written in {cfg["text_lang"]}. Time format: HH:mm.'
         )
@@ -412,7 +411,6 @@ class ItineraryService:
         print(final_prompt)
         print(f"================================================================\n")
 
-        # 4. 呼叫 LLM 產生回應
         llm_response_text = ""
 
         if HAS_GENAI_SDK:
@@ -435,7 +433,7 @@ class ItineraryService:
                     )
                 )
                 
-                # 5. 解析 LLM 回傳的 JSON 資料
+                # 解析 LLM 回傳的 JSON 資料
                 result_data = json.loads(response.text)
                 llm_response_text = result_data.get("reply_message", "行程已根據您的需求更新！")
                 new_schedules = result_data.get("schedules", [])
@@ -444,11 +442,11 @@ class ItineraryService:
                 print(llm_response_text)
               
                 # =====================================================================
-                # 🛡️ 深度安全與無變更檢查機制 (完美支援：刪除行程與深層局部修改比對)
+                # 🛡️ 深度安全與無變更檢查機制
                 # =====================================================================
                 is_unchanged = False
                 
-                # 只有在新舊行程長度完全相同時，才需要逐一檢查內容
+                # 只有在新舊行程長度完全相同時，才逐一檢查內容
                 if target_itinerary and len(new_schedules) == len(target_itinerary.schedules):
                     all_identical = True
                     for new_sch, orig_sch in zip(new_schedules, target_itinerary.schedules):
@@ -463,16 +461,16 @@ class ItineraryService:
                         
                         if new_title != orig_title or new_time != orig_time or new_content != orig_content:
                             all_identical = False
-                            break # 只要有任何一筆不吻合，代表有合理修改或拒絕
+                            break
                     
                     if all_identical:
                         is_unchanged = True
                 
-                # 情境 B：原本就沒有行程，且新產生的也是空陣列 (本來就空，無須做重複刪除插入)
+                # 原本就空，且新產生的也是空陣列
                 elif (not target_itinerary or not target_itinerary.schedules) and len(new_schedules) == 0:
                     is_unchanged = True
 
-                # 6.1 撈出該名顧客對應的 RecommendationId (主表 ID)
+                # 撈出該名顧客對應的 RecommendationId (主表 ID)
                 rec_sql = text("""
                     SELECT TOP 1 RecommendationId 
                     FROM VipItineraryRecommendation 
@@ -482,51 +480,112 @@ class ItineraryService:
                 rec_record = db.execute(rec_sql, {"customer_id": customer_id}).mappings().first()
 
                 # =====================================================================
-                # 💾 資料庫寫入邏輯
+                # 💾 資料庫覆寫寫入邏輯
                 # =====================================================================
                 if rec_record and not is_unchanged:
                     rec_id = rec_record["RecommendationId"]
 
-                    # 1. 先刪除該日期原本的舊行程 (達到清空/刪除的效果)
+                    # 1. 先刪除該日期原本的舊行程
                     delete_sql = text("""
                         DELETE FROM VipItinerarySchedule
                         WHERE RecommendationId = :rec_id AND ScheduleDate = :date
                     """)
                     db.execute(delete_sql, {"rec_id": rec_id, "date": date})
 
-                    # 2. 如果新行程有內容 (不是要全部刪光)，才一筆一筆 Insert 進去
+                    # 2. 如果新行程有內容，才一筆一筆 Insert 進去
                     if len(new_schedules) > 0:
                         insert_sql = text("""
                             INSERT INTO VipItinerarySchedule 
-                                (ScheduleId, RecommendationId, ScheduleDate, ScheduleTime, Title, Content, Preference)
+                                (ScheduleId, RecommendationId, ScheduleDate, ScheduleTime, Title, Content, Preference, PicUrl)
                             VALUES 
-                                (:schedule_id, :rec_id, :date, :time, :title, :content, :preference)
+                                (:schedule_id, :rec_id, :date, :time, :title, :content, :preference, :pic_url)
                         """)
 
                         for schedule in new_schedules:
+                            new_title = schedule.get("title", "未命名行程").strip()
+                            new_content = schedule.get("content", "").strip()
+                            
+                            matched_pic_url = ""
+                            is_original_item = False
+                            matched_spot = None
+
+                            # 🚀 A. 檢查是否為「原本就有的行程」(比對標題相似度以繼承舊圖片)
+                            if target_itinerary and target_itinerary.schedules:
+                                for orig_sch in target_itinerary.schedules:
+                                    orig_title = orig_sch.title.strip() if orig_sch.title else ""
+                                    if orig_title and (orig_title in new_title or new_title in orig_title):
+                                        is_original_item = True
+                                        raw_pic = orig_sch.imageUrl
+                                        if raw_pic:
+                                            # 還原經由 build_image_url 包裝過的路徑
+                                            if "/static/" in raw_pic:
+                                                matched_pic_url = "/static/" + raw_pic.split("/static/")[-1]
+                                            elif raw_pic.startswith("http"):
+                                                matched_pic_url = raw_pic
+                                        break
+
+                            # 🚀 B. 檢查是否符合 RAG 推薦景點 (第一層：包含關係與模糊匹配)
+                            for spot in candidate_spots:
+                                spot_title = spot["title"].strip() if spot.get("title") else ""
+                                if not spot_title:
+                                    continue
+                                
+                                # 模糊比對規則：
+                                # 1. 完全一致
+                                # 2. 資料庫景點名被包含在 AI 新行程標題中 (例如 "溫泉公園" 被包含在 "前往礁溪溫泉公園" 中)
+                                # 3. AI 新行程標題被包含在資料庫景點名中 (例如 "礁溪溫泉" 被包含在 "礁溪溫泉公園" 中)
+                                # 4. 新行程內容描述提及了該推薦景點
+                                if (new_title == spot_title or 
+                                    spot_title in new_title or 
+                                    new_title in spot_title or
+                                    (spot_title in new_content)):
+                                    
+                                    matched_spot = spot
+                                    if spot.get("pic_url"):
+                                        matched_pic_url = spot["pic_url"]
+                                    break
+
+                            # 🚀 C. 核心阻擋機制 (Strict RAG Guardrail)
+                            # 如果這筆行程既「不是原本就有的行程」，且「不符合任何一個 RAG 檢索到的推薦景點」
+                            # 則認定為 LLM 的幻覺或使用者隨意要求的外部不合規景點，我們直接【阻擋不寫入】！
+                            if not is_original_item and not matched_spot:
+                                print(f"🚫 阻擋機制觸發：新行程【{new_title}】既非原行程，亦不在 RAG 推薦範圍內，已拒絕寫入。")
+                                continue
+
+                            # 🚀 D. 第三層終極防呆：若確定是合規的 RAG 景點但 PicUrl 為空，則指派推薦景點第一筆的圖片
+                            if not matched_pic_url and matched_spot:
+                                if matched_spot.get("pic_url"):
+                                    matched_pic_url = matched_spot["pic_url"]
+                            
+                            if not matched_pic_url and candidate_spots:
+                                # 萬一連 matched_spot 都沒有 (理應不會走到這)，防呆用第一筆推薦圖片
+                                for spot in candidate_spots:
+                                    if spot.get("pic_url"):
+                                        matched_pic_url = spot["pic_url"]
+                                        break
+
                             db.execute(insert_sql, {
-                                "schedule_id": str(uuid.uuid4()).upper(), # GUID
+                                "schedule_id": str(uuid.uuid4()).upper(),
                                 "rec_id": rec_id,
                                 "date": date,
                                 "time": schedule.get("time", "00:00"),
-                                "title": schedule.get("title", "未命名行程"),
-                                "content": schedule.get("content", ""),
-                                "preference": schedule.get("preference", "系統推薦")
+                                "title": new_title,
+                                "content": new_content,
+                                "preference": schedule.get("preference", "系統推薦"),
+                                "pic_url": matched_pic_url
                             })
 
-                        print(f"💾 成功將 {date} 的 {len(new_schedules)} 筆新行程寫入資料庫！")
+                        print(f"💾 成功將 {date} 的 {len(new_schedules)} 筆新行程（已套用 RAG 景點阻擋過濾機制）寫入資料庫！")
                     else:
                         print(f"🗑️ 使用者要求清空行程，已成功刪除 {date} 的所有行程！")
 
-                    # 正式變更提交
                     db.commit()
-
                 else:
                     db.commit() 
                     print("🛡️ 觸發安全攔截或行程完全無變更，跳過資料庫覆寫。")
                     
             except Exception as e:
-                db.rollback() # 出錯時事務復原
+                db.rollback()
                 print(f"⚠️ 呼叫模型或更新資料庫時發生錯誤: {e}")
                 if determined_lang == "en":
                     llm_response_text = f"Dear {customer_data.get('full_name')}, we have received your request '{message}'. Our concierge team will adjust your exclusive schedule shortly!"
