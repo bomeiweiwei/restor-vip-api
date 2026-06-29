@@ -12,9 +12,11 @@ from app.services.guide_embedding_service import get_guide_embedding_model
 from app.services.guide_image_service import guide_image_service
 from app.services.guide_model_service import get_guide_model
 from app.services.guide_vector_db_service import GuideVectorDBService
-from app.services.guide_speech_to_text_service import guide_speech_to_text_service
+# from app.services.guide_speech_to_text_service import guide_speech_to_text_service
 from app.prompts.guide_answer_prompt import build_guide_answer_prompt
 from app.utils.markdown_utils import markdown_to_text
+
+from app.services.speech_to_text_service import speech_to_text_service
 
 
 IMAGE_EXTENSIONS = {
@@ -1185,11 +1187,16 @@ class GuideService:
     ) -> dict:
         input_items: list[dict[str, Any]] = []
         user_text = ""
-
+        
         try:
             if voice:
                 print(f"[GUIDE VOICE] filename={voice.filename}, content_type={voice.content_type}")
-                stt_result = await guide_speech_to_text_service.transcribe_upload_file(voice)
+                # stt_result = await guide_speech_to_text_service.transcribe_upload_file(voice)
+
+                stt_result = await speech_to_text_service.transcribe_upload_file(voice)
+
+
+
                 print(f"[GUIDE VOICE] STT result={stt_result}")
                 user_text = (stt_result or {}).get("text", "") or ""
 
