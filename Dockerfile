@@ -14,6 +14,8 @@ RUN apt-get update \
         unixodbc \
         unixodbc-dev \
         libgssapi-krb5-2 \
+        libssl3 \
+        ca-certificates \
         gcc \
         g++ \
     && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \

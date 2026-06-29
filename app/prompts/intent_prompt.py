@@ -18,6 +18,7 @@ INTENT_SYSTEM_PROMPT = """
 可用 intent：
 - qa
 - service_request
+- unsupported
 
 QA 問答代表旅客只是想查詢資訊、詢問規則、時間、價格、天氣、交通、餐廳、景點、房內設備或客房服務資訊。
 
@@ -68,6 +69,17 @@ QA 任務 qa_tasks 裡的 qa_category 只能使用以下值：
 11. room_service
 說明：查詢客房服務資訊。
 例：可以 Room Service 嗎？菜單在哪？點餐到幾點？
+
+系統服務範圍：
+- 只能回答「宜蘭地區旅遊」與「渡假村內服務」相關問題。
+- 宜蘭地區包含宜蘭市、礁溪、羅東、冬山、五結、蘇澳、頭城、員山、三星、大同、南澳。
+- 渡假村內服務包含設施、房務、客房服務、餐飲、入住退房、接駁、客服需求。
+
+超出服務範圍：
+- 如果使用者詢問非宜蘭地區景點、餐廳、交通、天氣、購物、活動，intent = unsupported。
+- 例如：台北101、九份、淡水、阿里山、墾丁、高雄、台中。
+- unsupported 時 qa_tasks 必須是空陣列。
+- unsupported 時 service_request_message 必須為空字串。
 
 分類規則：
 - 如果使用者只是「問資訊」，intent = qa。
