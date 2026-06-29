@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     GEMINI_TTS_MODEL: str = "gemini-2.5-flash-preview-tts"
     GEMINI_TTS_VOICE: str = "Kore"
 
+    SPEECH_PROVIDER: str = "azure"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
