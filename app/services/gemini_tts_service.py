@@ -5,30 +5,44 @@ from io import BytesIO
 
 from google import genai
 from google.genai import types
+from google.cloud import texttospeech
 from google.oauth2 import service_account
+
+import base64
 
 from app.core.config import settings
 
 
 class GeminiTtsService:
+    _VOICE_BY_LANGUAGE = {
+        "en-US": ("en-US", "en-US-Wavenet-F"),
+        "ja-JP": ("ja-JP", "ja-JP-Wavenet-B"),
+        "ko-KR": ("ko-KR", "ko-KR-Wavenet-A"),
+    }
+    _DEFAULT_VOICE = ("cmn-TW", "cmn-TW-Wavenet-A")
+
     def __init__(self):
-        self.client = self._create_client()
+        credentials = self._load_credentials()
+        self.client = self._create_client(credentials)
+        self.tts_client = self._create_tts_client(credentials)
 
-    def _create_client(self) -> genai.Client:
-        credentials = None
+    def _load_credentials(self) -> service_account.Credentials | None:
+        if not settings.GOOGLE_CREDENTIALS_JSON:
+            return None
 
-        if settings.GOOGLE_CREDENTIALS_JSON:
-            try:
-                credentials_info = json.loads(settings.GOOGLE_CREDENTIALS_JSON)
-                credentials = service_account.Credentials.from_service_account_info(
-                    credentials_info,
-                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
-                )
-                print("✅ 成功從 Pydantic Settings 載入 GCP 憑證字串。")
-            except Exception as e:
-                print(f"❌ 解析 GOOGLE_CREDENTIALS_JSON 失敗: {e}")
-                raise RuntimeError("GOOGLE_CREDENTIALS_JSON 解析失敗") from e
+        try:
+            credentials_info = json.loads(settings.GOOGLE_CREDENTIALS_JSON)
+            credentials = service_account.Credentials.from_service_account_info(
+                credentials_info,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            )
+            print("✅ 成功從 Pydantic Settings 載入 GCP 憑證字串。")
+            return credentials
+        except Exception as e:
+            print(f"❌ 解析 GOOGLE_CREDENTIALS_JSON 失敗: {e}")
+            raise RuntimeError("GOOGLE_CREDENTIALS_JSON 解析失敗") from e
 
+    def _create_client(self, credentials) -> genai.Client:
         if not settings.GOOGLE_CLOUD_PROJECT:
             raise RuntimeError("缺少 GOOGLE_CLOUD_PROJECT")
 
@@ -38,6 +52,11 @@ class GeminiTtsService:
             location=settings.GOOGLE_CLOUD_LOCATION,
             credentials=credentials,
         )
+
+    def _create_tts_client(self, credentials) -> texttospeech.TextToSpeechClient:
+        if credentials:
+            return texttospeech.TextToSpeechClient(credentials=credentials)
+        return texttospeech.TextToSpeechClient()
 
     def synthesize(self, text: str, language: str = "zh-TW") -> bytes:
         if not text or not text.strip():
@@ -116,6 +135,39 @@ class GeminiTtsService:
             "請用活潑、熱情、專業的客服人員語氣，自然地朗讀以下文字，"
             "語調輕快有朝氣，讓人感受到你真心想要協助的誠意：\n"
             f"{text}"
+        )
+    
+    def synthesize_base64(
+        self,
+        text: str,
+        language: str,
+    ) -> str:
+        if not text or not text.strip():
+            raise ValueError("TTS text 不可為空")
+
+        synthesis_input = texttospeech.SynthesisInput(text=text.strip())
+        voice = self._build_voice_params(language)
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=texttospeech.AudioEncoding.MP3,
+            speaking_rate=1.15,
+            pitch=1.0,
+        )
+
+        response = self.tts_client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice,
+            audio_config=audio_config,
+        )
+
+        return base64.b64encode(response.audio_content).decode("utf-8")
+
+    def _build_voice_params(self, language: str) -> texttospeech.VoiceSelectionParams:
+        language_code, voice_name = self._VOICE_BY_LANGUAGE.get(
+            language, self._DEFAULT_VOICE
+        )
+        return texttospeech.VoiceSelectionParams(
+            language_code=language_code,
+            name=voice_name,
         )
 
 

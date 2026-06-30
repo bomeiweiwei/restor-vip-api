@@ -5,6 +5,7 @@ from app.services.speech_to_text_service import speech_to_text_service
 from app.services.judge_user_input_service import judge_user_input_service
 from app.services.nlp_service import nlp_service
 from app.utils.markdown_utils import markdown_to_text
+from app.services.gemini_tts_service import get_gemini_tts_service
 
 from sqlalchemy.orm import Session
 
@@ -32,11 +33,19 @@ class AssistantService:
             target_language=language,
         )
 
+        speech_reply = markdown_to_text(translated_reply)
+
+        audio_base64 = get_gemini_tts_service().synthesize_base64(
+            text=speech_reply,
+            language=language,
+        )
+
         return AssistantResponse(
             text=text,
             reply=translated_reply,
-            speech_reply=markdown_to_text(translated_reply),
+            speech_reply=speech_reply,
             language=language,
+            audio_base64=audio_base64,
         )
 
     def send_message(

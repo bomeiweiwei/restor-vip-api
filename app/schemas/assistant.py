@@ -15,6 +15,7 @@ class AssistantResponse(BaseModel):
     reply: str
     speech_reply: str | None = None
     language: Literal["zh-TW", "en-US", "ja-JP", "ko-KR"] | None = "zh-TW"
+    audio_base64: str | None = None
 
 class QATask(BaseModel):
     qa_category: Literal[
