@@ -7,6 +7,7 @@ class ItineraryScheduleResponse(BaseModel):
     title: str
     content: str
     preference: str | None = None
+    imageUrl: str | None = None
 
 
 class ItineraryDateGroupResponse(BaseModel):
@@ -23,3 +24,4 @@ class ItineraryFeedbackRequest(BaseModel):
 class ItineraryFeedbackResponse(BaseModel):
     success: bool
     message: str
+    audio_base64: str | None = None  # 🚀 新增：用來存放 MP3 的 Base64 字串
