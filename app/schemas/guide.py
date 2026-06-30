@@ -12,6 +12,7 @@ class GuideAnalyzeResponse(BaseModel):
     imageUrl: Optional[str] = ""
     user_text: Optional[str] = ""
     responseLanguage: Optional[str] = "zh-TW"
+    audio_base64: str | None = None
 
 
 class GuideTextToSpeechRequest(BaseModel):
