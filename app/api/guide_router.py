@@ -30,6 +30,7 @@ async def analyze_guide(
     current_user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    
     return await guide_service.analyze(
         db=db,
         current_user=current_user,

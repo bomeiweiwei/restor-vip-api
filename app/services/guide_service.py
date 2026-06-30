@@ -12,7 +12,11 @@ from app.services.guide_embedding_service import get_guide_embedding_model
 from app.services.guide_image_service import guide_image_service
 from app.services.guide_model_service import get_guide_model
 from app.services.guide_vector_db_service import GuideVectorDBService
-from app.services.guide_speech_to_text_service import guide_speech_to_text_service
+# from app.services.guide_speech_to_text_service import guide_speech_to_text_service
+from app.prompts.guide_answer_prompt import build_guide_answer_prompt
+from app.utils.markdown_utils import markdown_to_text
+
+from app.services.speech_to_text_service import speech_to_text_service
 
 
 IMAGE_EXTENSIONS = {
@@ -129,6 +133,131 @@ class GuideCoreService:
         return text
 
     @classmethod
+    def _normalize_place_alias_for_compare(cls, text: str | None) -> str:
+        """把地點名稱轉成適合做「簡稱 / 別名」比對的格式。
+
+        目的：
+        - 綠舞觀光渡假村 ≈ 綠舞渡假村
+        - 綠舞觀光度假村 ≈ 綠舞渡假村
+        - 綠舞觀光渡假村 ≈ 綠舞
+        - 蘭陽博物館 ≈ 蘭陽
+        """
+        normalized = cls._normalize_text_for_compare(text)
+
+        if not normalized:
+            return ""
+
+        # 處理常見異體 / 簡繁 / 同義寫法。
+        replacements = {
+            "度假村": "渡假村",
+            "度假": "渡假",
+            "绿": "綠",
+            "兰": "蘭",
+            "馆": "館",
+            "饭店": "飯店",
+            "酒店": "酒店",
+        }
+        for old, new in replacements.items():
+            normalized = normalized.replace(old, new)
+
+        # 移除常見但不影響地點辨識的修飾詞。
+        removable_words = [
+            "觀光",
+            "国际",
+            "國際",
+            "休閒",
+            "股份有限公司",
+            "有限公司",
+        ]
+        for word in removable_words:
+            normalized = normalized.replace(word, "")
+
+        # source_path 可能包含資料夾斜線，別名比對時移除路徑分隔符。
+        normalized = re.sub(r"[\\/]+", "", normalized)
+
+        # 移除常見地點尾綴，避免「綠舞渡假村」與「綠舞觀光渡假村」
+        # 因中間少了「觀光」而比對失敗。
+        generic_suffixes = [
+            "渡假村",
+            "飯店",
+            "酒店",
+            "旅館",
+            "旅店",
+            "園區",
+            "中心",
+            "展館",
+            "藝館",
+            "美術館",
+            "博物館",
+            "老街",
+            "夜市",
+            "車站",
+            "餐廳",
+            "遊戲室",
+            "浴場",
+            "泳池",
+            "咖啡",
+            "cafe",
+            "廳",
+            "館",
+        ]
+        for suffix in generic_suffixes:
+            if normalized.endswith(suffix) and len(normalized) > len(suffix) + 1:
+                normalized = normalized[: -len(suffix)]
+                break
+
+        return normalized
+
+    @staticmethod
+    def _is_place_alias_match(left: str | None, right: str | None) -> bool:
+        """判斷兩個已正規化的地點別名是否可視為同一地點。
+
+        這裡允許「綠舞」這種短簡稱，但避免「渡假村」「博物館」
+        這類泛稱單獨通過比對。
+        """
+        left = (left or "").strip()
+        right = (right or "").strip()
+
+        if not left or not right:
+            return False
+
+        generic_only_words = {
+            "渡假村",
+            "度假村",
+            "飯店",
+            "酒店",
+            "旅館",
+            "旅店",
+            "園區",
+            "中心",
+            "展館",
+            "藝館",
+            "美術館",
+            "博物館",
+            "老街",
+            "夜市",
+            "車站",
+            "餐廳",
+            "遊戲室",
+            "浴場",
+            "泳池",
+            "咖啡",
+            "cafe",
+            "廳",
+            "館",
+        }
+        if left in generic_only_words or right in generic_only_words:
+            return False
+
+        if left == right:
+            return True
+
+        if len(left) >= 2 and len(right) >= 2:
+            return left in right or right in left
+
+        return False
+
+    @classmethod
     def _extract_requested_place_hint(cls, question: str | None) -> str | None:
         """從追問中抽出使用者疑似想切換詢問的地點名稱。
 
@@ -193,15 +322,29 @@ class GuideCoreService:
         place_name: str,
         extra_aliases: list[str] | None = None,
     ) -> bool:
-        """判斷一段文字是否看起來屬於目前鎖定地點。"""
+        """判斷一段文字是否看起來屬於目前鎖定地點。
+
+        除了原本的「連續字串包含」比對，也加入簡稱 / 別名容錯：
+        例如「綠舞渡假村」「綠舞度假村」「綠舞」都可對應
+        「綠舞觀光渡假村」。
+        """
         normalized_text = self._normalize_text_for_compare(text)
+        normalized_text_alias = self._normalize_place_alias_for_compare(text)
+
         if not normalized_text:
             return True
 
         aliases = [place_name, *(extra_aliases or [])]
         for alias in aliases:
             normalized_alias = self._normalize_text_for_compare(alias)
+
+            # 原本的嚴格包含比對保留。
             if normalized_alias and normalized_alias in normalized_text:
+                return True
+
+            # 新增：簡稱 / 別名容錯比對。
+            normalized_alias_for_compare = self._normalize_place_alias_for_compare(alias)
+            if self._is_place_alias_match(normalized_text_alias, normalized_alias_for_compare):
                 return True
 
         # 檢查目前 entity 的 payload/text/source_path 是否包含這個 hint。
@@ -222,8 +365,15 @@ class GuideCoreService:
                 record.get("text"),
             ]
             for haystack in haystacks:
-                normalized_haystack = self._normalize_text_for_compare(str(haystack or ""))
+                haystack_text = str(haystack or "")
+
+                normalized_haystack = self._normalize_text_for_compare(haystack_text)
                 if normalized_text and normalized_text in normalized_haystack:
+                    return True
+
+                # 新增：payload / 文字內容也做別名容錯比對。
+                normalized_haystack_alias = self._normalize_place_alias_for_compare(haystack_text)
+                if self._is_place_alias_match(normalized_text_alias, normalized_haystack_alias):
                     return True
 
         return False
@@ -692,39 +842,17 @@ class GuideCoreService:
         target_language = self._normalize_language_code(target_language)
         language_instruction = self._language_instruction(target_language)
 
-        prompt = f"""
-你是綠舞觀光渡假村的專屬導遊。
-請根據提供的知識庫資料回答使用者問題。
+        prompt = build_guide_answer_prompt(
+            place_name=place_name,
+            scope=scope,
+            category=category,
+            question=question,
+            context_text=context_text,
+            target_language=target_language,
+            language_instruction=language_instruction,
+            notes_text=notes_text,
+        )
 
-【重要語言規則】
-- 使用者本次問題的目標回覆語言是：{target_language}
-- 你必須使用：{language_instruction}
-- 即使知識庫資料是繁體中文，也必須翻譯並使用指定語言回答。
-- 不要混用其他語言。
-- 不要用繁體中文回答英文、日文、韓文問題。
-
-規則：
-- 只能回答「{place_name}」這個地點相關內容。
-- 不要把問題改成其他景點，也不要推薦無關地點。
-- 回答要保持簡潔、自然、像導遊介紹。
-- 如果資料不足，請明確說資料不足。
-- 最多 5 句。
-- 用方便閱讀的方式排版。
-
-目前鎖定地點：
-- 地點名稱：{place_name}
-- 範圍：{scope}
-- 分類：{category}
-
-使用者問題：
-{question}
-
-系統補充：
-{notes_text}
-
-知識庫資料：
-{context_text}
-""".strip()
 
         try:
             answer = self._call_llm_with_retry(prompt)
@@ -1033,8 +1161,15 @@ class GuideService:
 
     @staticmethod
     def _compose_guide_message(answer: str, user_name: str | None) -> str:
+        answer = (answer or "").strip()
+        if not answer:
+            answer = "已完成專屬導遊分析。"
         user_name = (user_name or "").strip()
-        if user_name and user_name not in ["貴賓", "Guest"] and not answer.startswith(user_name):
+        if (
+            user_name
+            and user_name not in ["貴賓", "Guest"]
+            and not answer.startswith(user_name)
+        ):
             return f"{user_name}，{answer}"
         return answer
 
@@ -1052,11 +1187,16 @@ class GuideService:
     ) -> dict:
         input_items: list[dict[str, Any]] = []
         user_text = ""
-
+        
         try:
             if voice:
                 print(f"[GUIDE VOICE] filename={voice.filename}, content_type={voice.content_type}")
-                stt_result = await guide_speech_to_text_service.transcribe_upload_file(voice)
+                # stt_result = await guide_speech_to_text_service.transcribe_upload_file(voice)
+
+                stt_result = await speech_to_text_service.transcribe_upload_file(voice)
+
+
+
                 print(f"[GUIDE VOICE] STT result={stt_result}")
                 user_text = (stt_result or {}).get("text", "") or ""
 
@@ -1120,11 +1260,20 @@ class GuideService:
             )
             answer = place_result.get("answer") or "已完成專屬導遊分析。"
 
+            guide_message = self._compose_guide_message(answer, user_name)
+            guide_message_text = markdown_to_text(guide_message).strip()
+
             return {
                 "success": True,
                 "title": title,
                 "location": location,
-                "guideMessage": self._compose_guide_message(answer, user_name),
+
+                # 給前端畫面顯示，保留 Markdown
+                "guideMessage": guide_message,
+
+                # 給 TTS 語音使用，移除 Markdown 符號
+                "guideMessageText": guide_message_text,
+
                 "audioUrl": "",
                 "imageUrl": place_result.get("representative_image_url") or "",
                 "user_text": user_text,
