@@ -15,6 +15,7 @@ from app.services.guide_vector_db_service import GuideVectorDBService
 # from app.services.guide_speech_to_text_service import guide_speech_to_text_service
 from app.prompts.guide_answer_prompt import build_guide_answer_prompt
 from app.utils.markdown_utils import markdown_to_text
+from app.services.gemini_tts_service import get_gemini_tts_service
 
 from app.services.speech_to_text_service import speech_to_text_service
 
@@ -1263,6 +1264,12 @@ class GuideService:
             guide_message = self._compose_guide_message(answer, user_name)
             guide_message_text = markdown_to_text(guide_message).strip()
 
+            audio_base64 = get_gemini_tts_service().synthesize_base64(
+                text=guide_message_text,
+                language=target_language,
+            )
+
+
             return {
                 "success": True,
                 "title": title,
@@ -1278,6 +1285,7 @@ class GuideService:
                 "imageUrl": place_result.get("representative_image_url") or "",
                 "user_text": user_text,
                 "responseLanguage": target_language,
+                "audio_base64": audio_base64
             }
 
         except ValueError as e:
