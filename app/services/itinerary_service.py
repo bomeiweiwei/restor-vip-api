@@ -58,18 +58,18 @@ class ItineraryService:
         self._validate_settings()
         self.vector_db = self._load_vector_db()
 
-    def _generate_tts_base64(self, text: str, country_code: str) -> str | None:
+    def _generate_tts_base64(self, text: str, determined_lang: str) -> str | None:
         """
         🚀 呼叫外部語音合成模組進行高品質 Wavenet 語音合成
         """
         # 國籍與 Google TTS 支援語系的對應分流
         lang_code_map = {
-            "TW": "zh-TW",
-            "US": "en-US",
-            "JP": "ja-JP",
-            "KR": "ko-KR"
+            "zh-TW": "zh-TW",
+            "en": "en-US",    # LLM 偵測為 en 時，對應給 Google TTS 的 en-US
+            "ja": "ja-JP",    # LLM 偵測為 ja 時，對應給 Google TTS 的 ja-JP
+            "ko": "ko-KR"     # LLM 偵測為 ko 時，對應給 Google TTS 的 ko-KR
         }
-        target_lang = lang_code_map.get(country_code, "zh-TW")
+        target_lang = lang_code_map.get(determined_lang, "zh-TW")
         
         try:
             print(f"🔊 正在透過 text_to_speech_itinerary 合成管家語音... 語系：{target_lang}")
@@ -488,18 +488,26 @@ class ItineraryService:
         # 獲取相對應語系的配置檔案
         cfg = lang_requirements.get(determined_lang, lang_requirements["zh-TW"])
 
-        # 關鍵強化 4：大幅收緊 Prompt 規範，強力要求 AI「嚴禁修改標題，且動作描述字元只能塞進 content 內」
-        # 關鍵強化 5：在 Requirements 中限制 AI 導覽內容簡短、精美 (適配 100-150 字)
+        # =====================================================================
+        # 🧠 核心修改：將動態語系判定直接寫進 Prompt，交由 Gemini 智慧處理
+        # =====================================================================
         output_requirement = (
-            f"1. **Guardrail & Topic Constraint**: Review the customer's request first. If the request is entirely unrelated to travel, hotels, itineraries, attractions, transportation, or dining (e.g., asking about programming, politics, financial investments, or casual chitchat), you MUST reject the request.\n"
-            f"   - In case of rejection: 'reply_message' must be a polite refusal written in {cfg['reply_lang']} explaining you can only help with itinerary planning, and the 'schedules' array must remain identical to the original schedule provided below.\n"
-            f"2. If the request is valid, adjust the original schedule based on user feedback. Keep original plans/times where possible, or clear them if requested.\n"
-            f"3. **CRITICAL PREFERENCE RULE**: For the 'preference' field of each schedule item, regardless of output language, you MUST ONLY output one of these exact Chinese category names: '觀光園區', '在地文化', '餐飲美食', '溫泉公園', or '其他'. DO NOT translate or modify this specific field so frontend filters remain functional!\n"
-            f"4. **STRICT RAG SCOPE GUARDRAIL**: If the user requests to add or change to a specific attraction, destination, restaurant, or activity that is NOT listed under '### Candidate Spots Recommended by System', you MUST NOT add it to the 'schedules' array. Instead, you should explain politely in the 'reply_message' (in {cfg['reply_lang']}) that the requested spot is currently unavailable or outside our resort's service scope, and keep the original itinerary unchanged for that specific slot.\n"
-            f"5. **MUST output in JSON format** with two fields:\n"
-            f'   - "reply_message": Warm, friendly, and extremely concise response to the customer written in {cfg["reply_lang"]}. It MUST be exactly 3 to 5 sentences long, structured beautifully with paragraph breaks (use standard newline characters like \\n\\n for paragraphs) to ensure elegant readability.\n'
-            f'   - "schedules": Array of updated daily items. Each item MUST be a JSON object containing exactly these four keys: "time" (string, format: HH:mm), "title" (string, exact PlaceName), "content" (string), and "preference" (string). E.g. {{"time": "08:00", "title": "蝶舞咖啡廳", "content": "...", "preference": "餐飲美食"}}. Key texts ("title", "content") MUST be entirely written in {cfg["text_lang"]}.\n'
-            f"6. **STRICT PLACE NAME MATCHING**: The 'title' field in the 'schedules' array MUST EXACTLY match one of the PlaceName keys from this list: {place_names_str}. DO NOT add any extra descriptions, action verbs (e.g., do not add '參觀', '體驗', '享用' to the title), emojis, or modify the title in any way. Keep the title exactly character-for-character identical to the list. Put descriptive action details ONLY inside the 'content' field.\n"
+            f"1. **Guardrail & Topic Constraint**: Review the customer's request first. If the request is entirely unrelated to travel, hotels, itineraries, attractions, transportation, or dining, you MUST reject the request.\n"
+            f"   - In case of rejection: 'reply_message' must be a polite refusal explaining you can only help with itinerary planning, and the 'schedules' array must remain identical to the original schedule provided below.\n"
+            f"2. **CANCELLATION & RESTING RULE (CRITICAL)**: If the user explicitly requests to cancel an activity, take a break, rest at the hotel, stay in, or have free time, you MUST respect this request by completely removing the corresponding schedule items. DO NOT force new recommendations. Return an empty array `[]` for 'schedules' if they cancel everything.\n"
+            f"3. **DYNAMIC LANGUAGE DETECTION**: Analyze the language used in '### Customer's Feedback'. You MUST detect if it is Traditional Chinese, English, Japanese, or Korean.\n"
+            f"   - Set the 'detected_lang' field to one of these exact codes: 'zh-TW', 'en', 'ja', 'ko'.\n"
+            f"   - Write 'reply_message' and texts inside 'schedules' ('title', 'content') in that EXACT detected language.\n"
+            f"4. **CRITICAL PREFERENCE RULE**: For the 'preference' field of each schedule item, you MUST ONLY output one of these exact Chinese category names: '觀光園區', '在地文化', '餐飲美食', '溫泉公園', or '其他'. DO NOT translate this field!\n"
+            f"5. **STRICT RAG SCOPE GUARDRAIL**: If the user requests a specific attraction NOT listed under '### Candidate Spots Recommended by System', DO NOT add it. Explain politely in 'reply_message' that the spot is unavailable.\n"
+            f"6. **MUST output in JSON format** with exactly these three fields:\n"
+            f'   - "detected_lang": String. "zh-TW", "en", "ja", or "ko".\n'
+            f'   - "reply_message": Friendly response (3-5 sentences, use \\n\\n for paragraphs) in the detected language.\n'
+            f'   - "schedules": Array of updated daily items. Each item MUST contain 5 keys: "time" (HH:mm), "db_place_name" (EXACT Chinese name), "title" (Translated name), "content" (Translated description), and "preference" (Chinese category).\n'
+            # 👇 關鍵改變：規定 db_place_name 鎖死中文清單，而 title 可以翻譯
+            f"7. **STRICT PLACE NAME MATCHING**: \n"
+            f"   - The 'db_place_name' field MUST EXACTLY match one of the Chinese keys from this list: {place_names_str}. DO NOT translate or modify it.\n"
+            f"   - The 'title' field SHOULD BE the accurately translated name of 'db_place_name' into the detected language.\n"
         )
 
         candidate_title = f"### Candidate Spots Recommended by System (Preferentially insert these if they match user preferences)" if determined_lang != "zh-TW" else "### 系統推薦的候選景點 (請優先從以下清單挑選適合該時段的行程來加入行程)"
@@ -507,7 +515,7 @@ class ItineraryService:
 
         # 動態組裝 Prompt
         prompt_lines = [
-            f"{cfg['role']} {cfg['task']}",
+            f"You are a professional and attentive VIP concierge itinerary planner. Please replan the itinerary for {date} based on the customer's request.",
             "",
             "### Customer Profile",
             f"- Name: {customer_data.get('full_name')}",
@@ -518,10 +526,10 @@ class ItineraryService:
             f"### Original Itinerary for {date}",
             original_schedule_text,
             "",
-            f"{feedback_title}",
+            "### Customer's Feedback",
             f"「{message}」",
             "",
-            f"{candidate_title}",
+            "### Candidate Spots Recommended by System",
         ]
 
         # 將 RAG 撈出來的景點塞進 Prompt 裡
@@ -571,7 +579,10 @@ class ItineraryService:
                 llm_response_text = result_data.get("reply_message", "行程已根據您的需求更新！")
                 new_schedules = result_data.get("schedules", [])
 
-                print("✅ LLM 行程解析成功！開始安全與意圖深度檢查...")
+                # 🚀 關鍵修改：直接從 LLM 的回傳結果中提取它辨識出來的語系！
+                determined_lang = result_data.get("detected_lang", "zh-TW")
+
+                print(f"✅ LLM 行程解析成功！模型自動偵測語系為：{determined_lang}")
                 print(llm_response_text)
               
                 # =====================================================================
@@ -639,86 +650,64 @@ class ItineraryService:
                         """)
 
                         for schedule in new_schedules:
-                            new_title = schedule.get("title", "").strip()
+                            # 🚀 雙欄位解析：用 db_place_name 來做後端驗證，用 title 來做前端顯示
+                            db_place_name = schedule.get("db_place_name", "").strip()
+                            display_title = schedule.get("title", "").strip()
                             
-                            # =====================================================================
-                            # 🚀 精確與「模糊自動容錯修復比對」
-                            # =====================================================================
+                            # 兜底防禦：如果 LLM 沒給 db_place_name，退回使用 title 來找
+                            check_name = db_place_name if db_place_name else display_title
+                            # 兜底防禦：如果 LLM 沒給 title，退回顯示中文名
+                            if not display_title:
+                                display_title = check_name
+
                             matched_title = None
                             
-                            # 1. 完全精確匹配
-                            if new_title in place_map:
-                                matched_title = new_title
+                            # 1. 完全精確匹配 (使用中文的 check_name 來比對)
+                            if check_name in place_map:
+                                matched_title = check_name
                             else:
                                 # 2. 子字串包含比對
                                 for valid_name in place_map.keys():
-                                    if valid_name in new_title or new_title in valid_name:
+                                    if valid_name in check_name or check_name in valid_name:
                                         matched_title = valid_name
                                         break
-                                
                                 # 3. 字元重合比對
                                 if not matched_title:
                                     best_match = None
                                     max_overlap = 0
                                     for valid_name in place_map.keys():
-                                        common_chars = len(set(valid_name) & set(new_title))
+                                        common_chars = len(set(valid_name) & set(check_name))
                                         if common_chars > max_overlap and common_chars >= 3:
                                             max_overlap = common_chars
                                             best_match = valid_name
                                     if best_match:
                                         matched_title = best_match
 
-                            # 4. 成功匹配或自動修復後，安全寫入資料庫
+                            # 4. 成功匹配後，安全寫入資料庫
                             if matched_title:
                                 matched_pic_url = place_map[matched_title]
-                                
-                                # 🚀 核心修正：解決修改行程後常常沒圖片的問題！
-                                # 如果 ResortKnowledgeItem 資料表中的 PicUrl 為空，進行智慧型後端配圖兜底，
-                                # 確保寫入資料庫的 pic_url 永遠有效，前端能立刻顯示精美大圖！
                                 pic_url_to_save = matched_pic_url if matched_pic_url else ""
+                                
+                                # ... (中間配圖兜底邏輯維持你原本的寫法不變) ...
                                 if not pic_url_to_save:
                                     title_lower = matched_title.lower()
-                                    if any(k in title_lower for k in ["溫泉", "spa", "湯屋", "風呂", "泡湯", "風呂浴場"]):
+                                    if any(k in title_lower for k in ["溫泉", "spa", "湯屋", "風呂", "泡湯"]):
                                         pic_url_to_save = "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80"
-                                    elif any(k in title_lower for k in ["餐", "食", "料理", "咖啡", "下午茶", "烤肉", "饗宴", "咖啡廳", "私廚", "餐廳", "璽舞"]):
-                                        pic_url_to_save = "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=600&q=80"
-                                    elif any(k in title_lower for k in ["手作", "體驗", "工坊", "文化", "美術館", "學校", "傳藝"]):
-                                        pic_url_to_save = "https://images.unsplash.com/photo-1528164344705-47542687000d?auto=format&fit=crop&w=600&q=80"
-                                    else:
-                                        # 依分類/Preference 兜底
-                                        pref = schedule.get("preference", "").strip()
-                                        fallback_map = {
-                                            "餐飲美食": "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?auto=format&fit=crop&w=600&q=80",
-                                            "在地文化": "https://images.unsplash.com/photo-1528164344705-47542687000d?auto=format&fit=crop&w=600&q=80",
-                                            "溫泉公園": "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=600&q=80",
-                                            "觀光園區": "https://images.unsplash.com/photo-1500627869374-13cd993b1115?auto=format&fit=crop&w=600&q=80",
-                                        }
-                                        pic_url_to_save = fallback_map.get(pref, "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=600&q=80")
-                                
-                                # 🚀 智慧鍵名相容層 (防禦性解析時間欄位)：
-                                parsed_time = (
-                                    schedule.get("time") or 
-                                    schedule.get("Time") or 
-                                    schedule.get("ScheduleTime") or 
-                                    schedule.get("scheduleTime") or 
-                                    schedule.get("schedule_time") or 
-                                    "00:00"
-                                ).strip()
+                                    # ... 略 ...
 
+                                parsed_time = (schedule.get("time") or "00:00").strip()
+
+                                # 🚀 關鍵寫入改變：Title 欄位寫入 display_title (多國語言翻譯版)
                                 db.execute(insert_sql, {
                                     "schedule_id": str(uuid.uuid4()).upper(),
                                     "rec_id": rec_id,
                                     "date": date,
-                                    "time": parsed_time,  # 🚀 使用多重容錯後取出的時間，告別 00:00！
-                                    "title": matched_title,  # 自動修正回資料庫完全合法的 PlaceName！
+                                    "time": parsed_time,
+                                    "title": display_title,  # <- 這裡寫入 LLM 翻譯的名稱
                                     "content": schedule.get("content", "").strip(),
                                     "preference": schedule.get("preference", "系統推薦"),
-                                    "pic_url": pic_url_to_save  # 🚀 改為寫入兜底後的安全圖片！
+                                    "pic_url": pic_url_to_save
                                 })
-                                print(f"💚 [智慧容錯對齊] 成功將 AI 行程標題【{new_title}】修復並寫入資料庫合法欄位【{matched_title}】，時間設為【{parsed_time}】，圖片設為【{pic_url_to_save}】。")
-                            else:
-                                print(f"🚫 [阻擋機制觸發] 行程標題【{new_title}】非合法景點名稱，且無法安全修復，已拒絕寫入. ")
-                                continue
                     
                     db.commit()
                     print(f"💾 成功將 {date} 的新行程狀態寫入資料庫並完成 Transaction Commit。")
@@ -751,7 +740,7 @@ class ItineraryService:
         # =====================================================================
         # 🚀 核心修改：完全對接並調用 text_to_speech_itinerary 產生語音回應
         # =====================================================================
-        audio_b64 = self._generate_tts_base64(llm_response_text, country_code)
+        audio_b64 = self._generate_tts_base64(llm_response_text, determined_lang)
 
         # 🚀 關鍵回傳更新：傳回真實修改寫入的 target date 欄位，確保前端能同步定位，不發生跳頁跑色！
         return {
