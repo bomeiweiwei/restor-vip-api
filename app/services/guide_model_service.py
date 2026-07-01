@@ -1,14 +1,15 @@
 from google import genai
+from openai import OpenAI
 
 from app.core.config import settings
 
 
 def get_guide_model(provider: str | None = None):
     """
-    專屬導遊的 Gemini API client。
+    專屬導遊 LLM client factory。
 
-    注意：這裡使用 Google AI Studio API Key 方式，
-    不覆蓋正式後端 app/ai/factory.py，避免影響既有功能。
+    GUIDE_MODEL_PROVIDER=gemini -> Gemini
+    GUIDE_MODEL_PROVIDER=azure  -> Azure OpenAI
     """
     provider = (provider or settings.GUIDE_MODEL_PROVIDER).lower().strip()
 
@@ -21,5 +22,16 @@ def get_guide_model(provider: str | None = None):
             )
 
         return genai.Client(api_key=api_key)
+
+    if provider == "azure":
+        base_url = settings.AZURE_OPENAI_BASE_URL.rstrip("/")
+
+        if not base_url.endswith("/openai/v1"):
+            base_url = f"{base_url}/openai/v1"
+
+        return OpenAI(
+            base_url=f"{base_url}/",
+            api_key=settings.AZURE_OPENAI_API_KEY,
+        )
 
     raise ValueError(f"目前不支援的 GUIDE_MODEL_PROVIDER：{provider}")
