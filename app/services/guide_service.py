@@ -38,8 +38,18 @@ class GuideCoreService:
     def __init__(self):
         self.embedding_model = get_guide_embedding_model()
         self.vector_db = GuideVectorDBService()
-        self.llm_client = get_guide_model()
-        self.generation_model = settings.GUIDE_GEMINI_GENERATION_MODEL
+
+        self.model_provider = (settings.GUIDE_MODEL_PROVIDER or "gemini").lower().strip()
+        self.llm_client = get_guide_model(self.model_provider)
+
+        if self.model_provider == "azure":
+            self.generation_model = (
+                getattr(settings, "AZURE_OPENAI_DEPLOYMENT_NAME", None)
+                or getattr(settings, "AZURE_OPENAI_MODEL", None)
+                or "gpt-5.1"
+            )
+        else:
+            self.generation_model = settings.GUIDE_GEMINI_GENERATION_MODEL
 
     def _project_root(self) -> Path:
         return Path(settings.GUIDE_PROJECT_ROOT).resolve()
@@ -871,10 +881,21 @@ class GuideCoreService:
         )
 
     def _call_llm_once(self, prompt: str) -> str:
+        if self.model_provider == "azure":
+            response = self.llm_client.responses.create(
+                model=self.generation_model,
+                input=prompt,
+                store=False,
+            )
+
+            answer = getattr(response, "output_text", None)
+            return answer.strip() if answer else ""
+
         response = self.llm_client.models.generate_content(
             model=self.generation_model,
             contents=prompt,
         )
+
         answer = getattr(response, "text", None)
         return answer.strip() if answer else ""
 
