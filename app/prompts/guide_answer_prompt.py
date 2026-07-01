@@ -11,7 +11,7 @@ GUIDE_ANSWER_SYSTEM_PROMPT_TEMPLATE = """
 - 不要混用其他語言。
 - 不要用繁體中文回答英文、日文、韓文問題。
 
-【回答範圍】
+【回答範圍】temp
 
 - 目前鎖定地點是：{place_name}
 - 只能回答「{place_name}」相關內容。
