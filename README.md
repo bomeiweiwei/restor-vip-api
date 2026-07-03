@@ -1,8 +1,8 @@
 # Resort VIP API
 
-渡假村 VIP 前台 API，提供 VIP 會員登入、AI 智慧助理、行程查詢等服務。
+渡假村 VIP 前台 API，提供 VIP 會員登入、AI 智慧助理、專屬導遊（AI 景點辨識與導覽）、景點推薦、行程查詢等服務。
 
-**Tech stack:** FastAPI · SQL Server · SQLAlchemy · JWT · Azure OpenAI · Qdrant (RAG) · Azure Speech
+**Tech stack:** FastAPI · SQL Server · SQLAlchemy · JWT · Azure OpenAI / Gemini (LLM、Embedding、TTS、STT) · Qdrant (RAG，兩套獨立向量庫) · Azure Speech · Azure Blob Storage
 
 ---
 
@@ -28,7 +28,12 @@ pip install -r requirements.txt
 
 ## Configuration
 
-在專案根目錄建立 `.env` 檔案：
+在專案根目錄建立 `.env` 檔案。本專案有**兩套獨立的 AI 子系統**，各自有自己的供應商切換：
+
+- **智慧助理**（`AI_PROVIDER` / `EMBEDDING_PROVIDER`），使用主要 Qdrant collection。
+- **專屬導遊**（`GUIDE_MODEL_PROVIDER` / `GUIDE_EMBEDDING_PROVIDER`），使用獨立的 Qdrant collection 與 Azure Blob Storage 存放景點圖片。
+
+`TTS_PROVIDER`、`SPEECH_PROVIDER` 為共用設定，智慧助理與專屬導遊皆透過同一組開關做語音合成／辨識。
 
 ```env
 # Database
@@ -44,26 +49,37 @@ JWT_SECRET_KEY=your_secret_key
 # CORS
 FRONTEND_ORIGIN=http://localhost:3000
 
-# Azure Speech
+# 語音辨識 STT（智慧助理 + 專屬導遊共用）：azure | gemini
+SPEECH_PROVIDER=azure
 AZURE_SPEECH_KEY=your_key
 AZURE_SPEECH_REGION=your_region
 
-# AI Provider (azure | gemini | lmstudio)
+# 語音合成 TTS（智慧助理 + 專屬導遊共用）：gemini | azure
+TTS_PROVIDER=gemini
+AZURE_OPENAI_TTS_ENDPOINT=https://your-resource.openai.azure.com/
+AZURE_OPENAI_TTS_KEY=your_key
+AZURE_OPENAI_TTS_VERSION=2025-03-01-preview
+AZURE_OPENAI_TTS_DEPLOYMENT=gpt-4o-mini-tts
+AZURE_OPENAI_TTS_VOICE=nova
+GEMINI_TTS_MODEL=gemini-2.5-flash-preview-tts
+GEMINI_TTS_VOICE=Kore
+
+# 智慧助理 AI Provider：azure | gemini | lmstudio
 AI_PROVIDER=azure
 EMBEDDING_PROVIDER=azure
 
-# Azure OpenAI
+# Azure OpenAI（AI_PROVIDER=azure、EMBEDDING_PROVIDER=azure 或 GUIDE_MODEL_PROVIDER=azure 時必填）
 AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/
 AZURE_OPENAI_API_KEY=your_key
 AZURE_OPENAI_DEPLOYMENT_NAME=your_deployment
 AZURE_OPENAI_EMBEDDING_MODEL=your_embedding_model
 
-# Gemini (optional)
+# Gemini（AI_PROVIDER=gemini 或 EMBEDDING_PROVIDER=gemini 時必填）
 GEMINI_API_KEY=
 GEMINI_MODEL_NAME=
 GEMINI_EMBEDDING_MODEL=
 
-# LM Studio (optional)
+# LM Studio（AI_PROVIDER=lmstudio 時必填）
 LMSTUDIO_BASE_URL=
 LMSTUDIO_API_KEY=
 LMSTUDIO_MODEL_NAME=
@@ -71,16 +87,47 @@ LMSTUDIO_MODEL_NAME=
 # OpenWeatherMap
 OPEN_WEATHER_MAP_API_KEY=your_key
 
-# Qdrant (Vector DB / RAG)
+# Qdrant — 智慧助理主要 RAG 向量庫
 QDRANT_URL=your_url
 QDRANT_API_KEY=your_key
 QDRANT_COLLECTION_NAME=your_collection
 QDRANT_TIMEOUT_SECONDS=30
 
-# Azure Translator
+# Azure Translator（智慧助理多語系）
 AZURE_TRANSLATOR_KEY=your_key
 AZURE_TRANSLATOR_ENDPOINT=https://api.cognitive.microsofttranslator.com/
 AZURE_TRANSLATOR_REGION=your_region
+
+# Google Cloud（Vertex AI / service account）
+# GOOGLE_APPLICATION_CREDENTIALS：金鑰檔案路徑，供 GeminiEmbeddings（Vertex AI）使用
+# GOOGLE_CREDENTIALS_JSON：service account JSON 字串，供 GeminiTtsService（Google Cloud TTS）使用
+GOOGLE_CREDENTIALS_JSON=
+GOOGLE_APPLICATION_CREDENTIALS=
+GOOGLE_CLOUD_PROJECT=
+GOOGLE_CLOUD_LOCATION=
+
+# 專屬導遊（Guide）— 獨立的 LLM / Embedding Provider 設定
+GUIDE_MODEL_PROVIDER=gemini       # gemini | azure
+GUIDE_EMBEDDING_PROVIDER=gemini   # 目前僅支援 gemini
+GUIDE_GEMINI_API_KEY=             # 未設定時退回使用 GEMINI_API_KEY
+GUIDE_GEMINI_EMBEDDING_MODEL=gemini-embedding-2
+GUIDE_EMBEDDING_DIM=3072
+GUIDE_GEMINI_GENERATION_MODEL=gemini-2.5-flash-lite
+
+# 專屬導遊向量資料庫（目前僅支援 qdrant）
+GUIDE_VECTOR_DB_BACKEND=qdrant
+GUIDE_QDRANT_URL=your_url
+GUIDE_QDRANT_API_KEY=your_key
+GUIDE_QDRANT_COLLECTION_NAME=resort_guide
+GUIDE_QDRANT_TIMEOUT_SECONDS=180
+
+# Azure Blob Storage — 儲存專屬導遊景點原始圖片
+AZURE_STORAGE_AUTH_MODE=connection_string
+AZURE_STORAGE_ACCOUNT_NAME=
+AZURE_STORAGE_CONTAINER_NAME=
+AZURE_STORAGE_CONNECTION_STRING=
+
+ASSET_BASE_URL=
 ```
 
 ---
@@ -120,7 +167,7 @@ HTTP request
   → Depends(get_current_user)  — JWT Bearer 驗證
   → Depends(get_db)            — SQLAlchemy session
   → Service  (app/services/)
-  → ORM models  (app/models/)
+  → ORM models（app/models/）或 raw SQL（無 ORM model 的表）
 ```
 
 ### Layer Responsibilities
@@ -131,13 +178,15 @@ HTTP request
 | Database | `app/core/database.py` | SQL Server via pyodbc (`mssql+pyodbc`) |
 | Security | `app/core/security.py` | bcrypt 驗證、HS256 JWT 簽發 |
 | Auth dep | `app/dependencies/auth_dependency.py` | `get_current_user` — 解碼 JWT Bearer |
-| Models | `app/models/` | SQLAlchemy ORM |
+| Models | `app/models/` | SQLAlchemy ORM，僅涵蓋 Auth / Itinerary 相關表 |
 | Schemas | `app/schemas/` | Pydantic v2 request/response |
 | Services | `app/services/` | 業務邏輯 |
-| Agents | `app/agents/` | AI agent 封裝（RAG、天氣、交通） |
-| AI | `app/ai/` | 可切換的 LLM 後端（Azure OpenAI / Gemini / LM Studio） |
+| Agents | `app/agents/` | 智慧助理 AI agent 封裝（RAG、天氣、交通） |
+| AI | `app/ai/` | 智慧助理可切換的 LLM 後端（Azure OpenAI / Gemini / LM Studio） |
 | Tools | `app/tools/` | LangChain tools（RAG、天氣、交通） |
 | Prompts | `app/prompts/` | Prompt 範本 |
+| Guide services | `app/services/guide_*.py` | 專屬導遊子系統，獨立的 LLM / Embedding / 向量庫 / 圖片儲存設定，詳見下方「專屬導遊」章節 |
+| Speech services | `app/services/speech_to_text_service.py`、`text_to_speech_service.py` | 依 `SPEECH_PROVIDER` / `TTS_PROVIDER` 分派到 Azure 或 Gemini 實作，智慧助理與專屬導遊共用 |
 | Routers | `app/api/` | FastAPI `APIRouter`；前綴 `/api/<domain>` |
 
 ### Database Schema
@@ -150,6 +199,9 @@ CustomerVipAccount (CustomerVipAccountId, LoginAccount, PasswordHash, IsActive, 
 CustomerVipLoginToken (TokenHash, CustomerVipAccountId, ExpireAt, UsedAt, ...)
 CustomerServiceRequest (RequestNo, CustomerVipAccountId, CustomerId, BookingStayId,
                         RoomId, RoomNo, CustomerName, Message, Status, PriorityLevel, CreatedAt)
+
+# 以 raw SQL 查詢（app/services/attraction_service.py），未建立 ORM model：
+VipItineraryRecommendation / VipItinerarySchedule (Title, Preference, Latitude, Longitude, ...)
 ```
 
 ### JWT Payload
@@ -216,11 +268,13 @@ Request：
 
 ```
 使用者訊息
-  → NLP（語言偵測 + 翻譯為中文）
+  → STT（SPEECH_PROVIDER：azure | gemini）
+  → NLP（Azure Translator 語言偵測 + 翻譯為中文）
   → Intent Classifier（意圖分類）
-      ├─ qa              → RAG 搜尋（Qdrant）→ 組合回答
+      ├─ qa              → RAG 搜尋（主要 Qdrant）→ 組合回答
       └─ service_request → 寫入客服需求單（CustomerServiceRequest）
   → 翻譯回使用者語言
+  → TTS（TTS_PROVIDER：gemini | azure）
   → 回傳
 ```
 
@@ -276,6 +330,104 @@ Response：`audio/mpeg` 二進位串流。
 
 ---
 
+### Guide（專屬導遊）
+
+受 JWT Bearer 保護。這是與智慧助理**完全獨立**的 AI 子系統：拍照 / 語音 / 文字辨識渡假村景點，並提供導覽解說與追問。使用獨立的 Qdrant collection、獨立的 LLM / Embedding provider（`GUIDE_MODEL_PROVIDER` / `GUIDE_EMBEDDING_PROVIDER`），圖片存放在 Azure Blob Storage。
+
+```
+使用者輸入（照片 / 語音 / 文字）
+  → [有語音] STT（SPEECH_PROVIDER）
+  → 依文字內容自動判斷回覆語言（正則判斷 CJK / 假名 / 諺文 / 拉丁字母，非 NLP 服務）
+  → 建立查詢向量（文字 → GUIDE_EMBEDDING_PROVIDER；圖片 → 記憶體內轉檔後 embedding，不落地）
+  → 已鎖定景點（帶 attraction_title 且無新圖片）→ 追問模式
+     否則                                      → 景點辨識模式
+       於專屬導遊 Qdrant collection 搜尋，依 entity_id 聚合，最低信心分數 0.70
+       追問時會偵測是否切換到其他地點，避免誤用別的景點資料回答
+  → LLM（GUIDE_MODEL_PROVIDER）產生導覽文字
+  → 代表圖片由 Azure Blob Storage 讀取（HEIC/HEIF 於記憶體內轉 JPEG）
+  → TTS（TTS_PROVIDER）合成語音，以 base64 直接回傳
+```
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/guide/analyze` | 上傳照片 / 語音 / 文字，辨識景點並回傳導覽文字 + 語音 |
+| POST | `/api/guide/text-to-speech` | 專屬導遊專用 TTS，回傳 `audio/mpeg`，不儲存音檔 |
+| GET | `/api/guide/images/{image_path}` | 讀取 Azure Blob Storage 中的原始景點圖片 |
+| GET | `/api/guide/converted-images/{filename}` | 舊版 HEIC→JPG 轉檔圖片路徑（目前流程改為即時記憶體轉檔） |
+
+#### POST `/api/guide/analyze`
+
+Request：`multipart/form-data`
+
+| 欄位 | 說明 |
+|---|---|
+| `language` | 前端 UI 語言，作為無法從文字判斷語言時的 fallback（預設 `zh-TW`） |
+| `image` | 選填，景點照片 |
+| `text` | 選填，文字問題 |
+| `voice` | 選填，語音檔，會先經 STT 轉文字 |
+| `attraction_title` | 選填，已鎖定景點名稱（用於追問，不上傳新圖片時生效） |
+| `user_name` | 選填，用於在回覆開頭稱呼使用者 |
+| `history` | 選填，對話歷史 |
+
+Response：
+
+```json
+{
+  "success": true,
+  "title": "綠舞觀光渡假村",
+  "location": "基礎介紹",
+  "guideMessage": "王小明，這裡是綠舞觀光渡假村...",
+  "audioUrl": "",
+  "imageUrl": "https://.../images/main.jpg",
+  "user_text": "這是哪裡？",
+  "responseLanguage": "zh-TW",
+  "audio_base64": "..."
+}
+```
+
+#### POST `/api/guide/text-to-speech`
+
+Request：
+
+```json
+{
+  "text": "歡迎來到綠舞觀光渡假村",
+  "language": "zh-TW"
+}
+```
+
+Response：`audio/mpeg` 二進位串流。
+
+---
+
+### Attractions
+
+受 JWT Bearer 保護。
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/attractions/recommended` | 取得當前 VIP 會員的推薦景點清單（含經緯度，供前端地圖顯示） |
+
+#### GET `/api/attractions/recommended`
+
+依 `VipItineraryRecommendation` / `VipItinerarySchedule` 兩表 join 目前登入會員的推薦行程，回傳有經緯度的景點。
+
+Response：
+
+```json
+[
+  {
+    "attraction_id": "蘭陽博物館",
+    "place_name": "蘭陽博物館",
+    "category": "文化園區",
+    "latitude": 24.869,
+    "longitude": 121.821
+  }
+]
+```
+
+---
+
 ### Itinerary
 
 受 JWT Bearer 保護。
@@ -294,7 +446,21 @@ Response：`audio/mpeg` 二進位串流。
 Request：
 
 ```json
-{ "message": "非常滿意，期待下次入住。" }
+{
+  "message": "非常滿意，期待下次入住。",
+  "date": "2026-07-03",
+  "lang": "zh"
+}
+```
+
+Response：
+
+```json
+{
+  "success": true,
+  "message": "感謝您的回饋！",
+  "audio_base64": "..."
+}
 ```
 
 ---
