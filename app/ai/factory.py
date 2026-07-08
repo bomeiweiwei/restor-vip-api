@@ -15,7 +15,8 @@ def create_ai_langchain(ai_type: AiType | str) -> BaseAILangchain:
 
     if ai_type == AiType.GEMINI:
         return GeminiLangchain(
-            api_key=settings.GEMINI_API_KEY,
+            credentials_json=settings.GOOGLE_CREDENTIALS_JSON,
+            project_id=settings.GOOGLE_CLOUD_PROJECT,
             model_name=settings.GEMINI_MODEL_NAME,
         )
 

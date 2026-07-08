@@ -94,8 +94,8 @@ class QAService:
         )
 
         reply = (
-            final_answer.content
-            if hasattr(final_answer, "content")
+            final_answer.text
+            if hasattr(final_answer, "text")
             else str(final_answer)
         )
 
