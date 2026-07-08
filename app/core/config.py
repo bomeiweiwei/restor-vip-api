@@ -104,6 +104,8 @@ class Settings(BaseSettings):
     SPEECH_PROVIDER: str = "azure"
 
     TRANSLATOR_PROVIDER: str = "google"
+    GOOGLE_EMBEDDING_LOCATION: str = "us-central1"
+    GEMINI_EMBEDDING_DIMENSIONALITY: int = 768
 
     class Config:
         env_file = ".env"

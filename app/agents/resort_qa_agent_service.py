@@ -12,6 +12,7 @@ class ResortQAAgentService:
         return rag_tool.search(
             query=query,
             qa_category=qa_category,
+            k=5,
         )
 
 

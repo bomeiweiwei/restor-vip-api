@@ -1,44 +1,51 @@
-import os
-from typing import List
-
-from google import genai
-from google.genai import types
 from langchain_core.embeddings import Embeddings
 from langchain_openai import OpenAIEmbeddings
+from google import genai
+from google.genai import types
+from typing import List
 
 from app.core.config import settings
 
 class GeminiEmbeddings(Embeddings):
     def __init__(self):
-        credentials_path = settings.GOOGLE_APPLICATION_CREDENTIALS
+        import json
 
-        if not credentials_path:
-            raise ValueError("缺少 GOOGLE_APPLICATION_CREDENTIALS")
+        from google.oauth2 import service_account
 
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+        credentials_json = settings.GOOGLE_CREDENTIALS_JSON
+
+        if not credentials_json:
+            raise ValueError("缺少 GOOGLE_CREDENTIALS_JSON")
+
+        credentials_info = json.loads(credentials_json)
+
+        credentials = service_account.Credentials.from_service_account_info(
+            credentials_info,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
 
         self.client = genai.Client(
             vertexai=True,
+            credentials=credentials,
             project=settings.GOOGLE_CLOUD_PROJECT,
-            location=settings.GOOGLE_CLOUD_LOCATION,
+            location=settings.GOOGLE_EMBEDDING_LOCATION,
         )
 
         self.model = settings.GEMINI_EMBEDDING_MODEL
+        self.output_dimensionality = settings.GEMINI_EMBEDDING_DIMENSIONALITY
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """將多個文檔（Documents）轉換為向量群（批次處理）"""
         if not texts:
             return []
-        
-        # 加上這行來觀察自動呼叫的行為
-        print(f"--- LangChain 自動呼叫了 embed_documents，本次批次處理 {len(texts)} 筆文字 ---")
             
         # 修正：直接將整個 texts 列表傳入，利用 API 的批次處理功能
         result = self.client.models.embed_content(
             model=self.model,
             contents=texts,
             config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_DOCUMENT"  # 明確指定為文檔建立索引
+                task_type="RETRIEVAL_DOCUMENT",  # 明確指定為文檔建立索引
+                output_dimensionality=self.output_dimensionality,
             )
         )
         
@@ -51,7 +58,8 @@ class GeminiEmbeddings(Embeddings):
             model=self.model,
             contents=text,
             config=types.EmbedContentConfig(
-                task_type="RETRIEVAL_QUERY"  # 明確指定為搜尋問題
+                task_type="RETRIEVAL_QUERY",  # 明確指定為搜尋問題
+                output_dimensionality=self.output_dimensionality,
             )
         )
 
@@ -71,5 +79,5 @@ def get_embedding_function() -> Embeddings:
         return GeminiEmbeddings()
 
     raise ValueError(
-        f"不支援的 EMBEDDING_PROVIDER：{provider}，請使用 azure或gemini"
+        f"不支援的 EMBEDDING_PROVIDER：{provider}，請使用 azure 或 gemini"
     )
