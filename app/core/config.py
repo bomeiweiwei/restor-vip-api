@@ -103,6 +103,8 @@ class Settings(BaseSettings):
 
     SPEECH_PROVIDER: str = "azure"
 
+    TRANSLATOR_PROVIDER: str = "google"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
